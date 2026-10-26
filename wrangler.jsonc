@@ -19,7 +19,7 @@
       "database_name": "fitness-tracker-db",
       // Replace with the id printed by: npx wrangler d1 create fitness-tracker-db
       // (scripts/setup-cloudflare.sh does this for you). Any value works for local dev.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "bf924543-83df-4f3e-be86-7caf75480b83",
       "migrations_dir": "migrations"
     }
   ],

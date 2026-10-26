@@ -31,6 +31,8 @@ You need a free Cloudflare account and Node.js 20 or newer on your computer.
    npm install
    npm run setup
    ```
+   Non-interactive (for scripts or when Claude runs it for you): `APP_PASSWORD='...' API_TOKEN='...' npm run setup`.
+
    The script logs you in to Cloudflare in the browser, creates the D1 database, writes its id into `wrangler.jsonc`, applies the schema, asks for the app password, generates an API token and deploys. It prints the URL, something like `https://fitness-tracker.<your-subdomain>.workers.dev`.
 3. Open that URL on your phone, log in, and add it to the home screen (Safari: Share, Add to Home Screen). It then opens like an app.
 4. Commit the `wrangler.jsonc` change (it now holds the database id) and push.

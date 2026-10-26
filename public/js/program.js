@@ -42,7 +42,7 @@ export const PROGRAM = {
         { id: "broad", name: "Broad jump", sets: "3 × 3", note: "Stick each landing" },
         { id: "slh_fwd", name: "Single leg hop forward", sets: "2 × 4 per leg", note: "Hold the landing 2 s" },
         { id: "lat_bound", name: "Lateral bound", sets: "2 × 4 per side", note: "Stick each landing" },
-        { id: "shuttle", name: "5-10-5 shuttle", sets: "4 reps", note: "80% effort" },
+        { id: "split_step", name: "Split step + first step", sets: "3 × 6", note: "80% effort. Small padel ready hop, then one explosive step in any direction and stick. Needs about 2 m" },
       ],
       2: [
         { id: "cmj", name: "Countermovement jump", sets: "3 × 5", note: "Max height, reset between reps" },
@@ -50,8 +50,8 @@ export const PROGRAM = {
         { id: "slh_fwd", name: "Single leg hop forward", sets: "2 × 4 per leg", note: "Stick 2 s" },
         { id: "slh_side", name: "Single leg hop sideways", sets: "2 × 4 per leg", note: "Stick 2 s" },
         { id: "lat_bound", name: "Lateral bound", sets: "2 × 5 per side", note: "" },
-        { id: "shuttle", name: "5-10-5 shuttle", sets: "4 reps", note: "Full speed" },
-        { id: "accel", name: "10 m acceleration", sets: "4 reps", note: "Walk back to recover" },
+        { id: "split_step", name: "Split step + first step", sets: "4 × 6", note: "Full speed" },
+        { id: "tuck", name: "Tuck jump", sets: "3 × 5", note: "Knees to chest, soft landing" },
       ],
       3: [
         { id: "depth", name: "Depth jump from 30 to 45 cm box", sets: "4 × 4", note: "Off the ground as fast as possible" },
@@ -59,7 +59,7 @@ export const PROGRAM = {
         { id: "slh3", name: "Single leg hop, 3 in a row", sets: "3 per leg", note: "" },
         { id: "lat_cont", name: "Continuous lateral bound", sets: "3 × 6 per side", note: "" },
         { id: "reaction", name: "Reaction drill", sets: "6 × 5 s", note: "Partner points a direction or drops a ball" },
-        { id: "sprint20", name: "20 m sprint", sets: "4 to 6 reps", note: "Full recovery between" },
+        { id: "sl_pogo", name: "Single leg pogo hops", sets: "3 × 10 per leg", note: "Quick and stiff, on the spot" },
       ],
     },
     phaseNotes: {
@@ -191,6 +191,7 @@ export const PROGRAM = {
     easy_run: {
       key: "easy_run", name: "Easy zone 2 run", kind: "run", subtitle: "30 to 40 min, conversational pace", duration: "30 to 40 min",
       detail: "30 to 40 min at a pace where you can talk in full sentences. It will feel embarrassingly slow. That is correct, and it is what makes the hard sessions and padel feel easy.",
+      fromWeek3: "From week 3, end it with 4 to 6 × 20 m sprints outdoors, walking back between them. That covers the sprinting the gym has no room for.",
       easy: true,
     },
     rest_walk: {
@@ -343,7 +344,10 @@ export function resolveDay(dateStr, settings = {}) {
     template,
     plan: buildPlan(templateKey, week),
     jumps: template.blocks && template.blocks.includes("jumps") ? PROGRAM.jumps.byPhase[phase] : null,
-    extras: isoWeekday(dateStr) === 7 ? ["Padel (extra, not counted)"] : isoWeekday(dateStr) === 1 ? ["Badminton in the evening (extra, not counted)"] : [],
+    extras: [
+      ...(templateKey === "easy_run" && week >= 3 && template.fromWeek3 ? [template.fromWeek3] : []),
+      ...(isoWeekday(dateStr) === 7 ? ["Padel (extra, not counted)"] : isoWeekday(dateStr) === 1 ? ["Badminton in the evening (extra, not counted)"] : []),
+    ],
     startDate,
   };
 }

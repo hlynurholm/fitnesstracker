@@ -5,6 +5,7 @@ A personal workout tracker and fitness dashboard for the "Plan to 85 kg" program
 What it does:
 
 - Shows the session for any day: Lift A, B or C with warm-up, jump drills for the current phase and every lift with sets and reps, or the run with its distance and structure, or a rest day. Deload weeks and test weeks are marked.
+- Calendar: a month view of every planned session. Tap a day to open it, swap it with another day, or change which session happens that day. Moved days are marked and "Back to the plan" undoes it. The same options sit under "Move or change this session" in the day view.
 - Logs kg and reps (or seconds, metres) per set. Last time's numbers are pre-filled as placeholders; the tick button accepts them with one tap. Works offline and syncs later.
 - Charts progression per lift (estimated 1RM, top set, volume), several lifts overlaid, body weight with 7-day average against the 85 kg goal, running pace and 5 km times, nutrition against targets, and a session heatmap.
 - Takes Garmin exports (FIT, TCX, GPX, CSV) attached to a run and MyFitnessPal CSV exports. Parses what it can (splits, heart rate zones, best 5 km, daily calories and protein) and keeps the original file.
@@ -84,6 +85,9 @@ All routes need the session cookie or `Authorization: Bearer <API_TOKEN>`.
 
 | Route | Purpose |
 | --- | --- |
+| `GET /api/schedule?from=&to=` | Planned session per day in a range (max 120 days), with overrides and logged workouts |
+| `PUT /api/schedule/:date` | `{template_key}` sets what happens that day; `null` returns to the plan |
+| `POST /api/schedule/swap` | `{a, b}` swaps the sessions of two dates |
 | `GET /api/day/:date` | Everything for one day: schedule, plan, logged sets, last values per exercise, week strip |
 | `PUT /api/day/:date/workout` | Create or update the day's session (status, notes, run distance and time, checklist, plan) |
 | `PUT /api/sets/:client_id`, `DELETE` | Upsert or delete one set (client-generated id, so offline saves replay safely) |

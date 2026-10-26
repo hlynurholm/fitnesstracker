@@ -8,6 +8,7 @@ export function h(tag, attrs, ...children) {
     else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2).toLowerCase(), v);
     else if (k === "html") el.innerHTML = v;
     else if (k === "dataset") Object.assign(el.dataset, v);
+    else if (k === "value") el.value = v; // a textarea has no value attribute
     else if (k in el && k !== "list" && typeof v !== "string") el[k] = v;
     else el.setAttribute(k, v === true ? "" : v);
   }

@@ -303,3 +303,24 @@ button.list-item { width: 100%; background: none; border: none; border-bottom: 1
 button.list-item:last-child { border-bottom: none; }
 tfoot td { font-weight: 600; border-top: 1px solid var(--sep); }
 @media (max-width: 420px) { .nav-item { font-size: .58rem; } .nav-icon { width: 24px; height: 24px; } }
+
+/* Timer bar pinned above the tabs while logging */
+.timer-bar { position: fixed; left: 0; right: 0; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); z-index: 40; display: flex; justify-content: space-around; align-items: center; gap: 1rem; padding: .4rem 1rem; background: var(--surface); border-top: 1px solid var(--sep); border-bottom: 1px solid var(--sep); }
+.view.with-bar { padding-bottom: calc(var(--nav-h) + 1.5rem + env(safe-area-inset-bottom) + 56px); }
+.tb-item { display: flex; flex-direction: column; align-items: center; min-width: 70px; }
+.tb-label { font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+.tb-value { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.tb-count .tb-value { color: var(--accent); }
+@media (min-width: 900px) { .timer-bar { left: 220px; bottom: 0; border-bottom: none; } .view.with-bar { padding-bottom: 90px; } }
+
+/* Set countdown */
+.set-row .cell.has-count input { padding-right: 2.5rem; }
+.count-btn { position: absolute; right: .3rem; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--accent-soft); color: var(--accent); font-size: .75rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 0 0 2px; cursor: pointer; }
+.count-btn.running { background: var(--danger); color: #fff; padding: 0; }
+.set-row input.counting { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+
+/* Notes per exercise or block */
+.note-field textarea { display: none; }
+.note-field.open textarea { display: block; margin-top: .5rem; min-height: 40px; font-size: .92rem; resize: none; overflow: hidden; }
+.note-field.open .note-toggle { display: none; }
+.ex-last-note, .list-item .sub.note { font-style: italic; margin-top: .15rem; }

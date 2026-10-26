@@ -38,8 +38,19 @@ if (await p.locator(".exercise").count() !== 0) errors.push("overview shows inpu
 await p.screenshot({ path: `${out}/phone-overview.png`, fullPage: true });
 await p.locator("button", { hasText: "Start workout" }).click();
 await p.waitForSelector(".exercise");
-if (!(await p.locator(".timer-row").textContent()).includes("Workout")) { await p.waitForTimeout(1200); }
+await p.waitForTimeout(800);
+if (!(await p.locator(".timer-bar [data-tb-workout]").isVisible())) errors.push("timer bar not visible in log mode");
 await p.screenshot({ path: `${out}/phone-logging.png`, fullPage: true });
+// Note on an exercise
+const benchBlock = p.locator('.exercise[data-key="db_bench"]');
+await benchBlock.locator(".note-toggle").click();
+await benchBlock.locator("textarea").fill("Right shoulder clicked on set 2");
+// Countdown on a timed set: 2 seconds, then the set is ticked automatically
+const plank = p.locator('.exercise[data-key="copenhagen_plank"]');
+await plank.locator(".set-row").first().locator("input").fill("2");
+await plank.locator(".set-row").first().locator(".count-btn").click();
+await p.waitForTimeout(3200);
+if (!(await plank.locator(".set-row").first().locator(".tick").evaluate((el) => el.classList.contains("done")))) errors.push("countdown did not tick the set");
 
 // Log a set: type kg and reps, tick.
 const bench = p.locator('.exercise[data-key="db_bench"] .set-row').first();
@@ -65,6 +76,10 @@ const done2 = await rows.nth(2).locator(".tick").evaluate((el) => el.classList.c
 console.log(`persisted after reload: set1 kg=${kg0} done=${done0}, set2 kg=${kg1} reps=${reps1} done=${done1}, set3 kg=${kg2} done=${done2}`);
 if (kg0 !== "30" || kg1 !== "30" || reps1 !== "8" || kg2 !== "32.5") errors.push("set persistence failed");
 if (!done0 || done1 || done2) errors.push("tick state wrong after untick/draft");
+const noteBack = await p.locator('.exercise[data-key="db_bench"] textarea').inputValue();
+if (!/shoulder/.test(noteBack)) errors.push("exercise note did not persist: " + noteBack);
+const plankBack = await p.locator('.exercise[data-key="copenhagen_plank"] .set-row').first().locator("input").inputValue();
+if (plankBack !== "2") errors.push("countdown value did not persist: " + plankBack);
 await p.screenshot({ path: `${out}/phone-today-logged.png`, fullPage: false });
 
 // Warm-up checklist tick persists

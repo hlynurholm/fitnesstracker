@@ -92,6 +92,7 @@ async function route(method, p, request, env, url, settings) {
     const date = assertDate(b);
     if (!c && method === "GET") return getDay(env, date, settings);
     if (c === "workout" && (method === "PUT" || method === "POST")) return upsertDayWorkout(env, date, await readJson(request), settings);
+    if (c === "notes" && (method === "PUT" || method === "POST")) return upsertBlockNote(env, date, await readJson(request), settings);
   }
 
   if (a === "sets" && b) {
@@ -111,6 +112,7 @@ async function route(method, p, request, env, url, settings) {
     if (b && (method === "PATCH" || method === "PUT")) return patchWorkout(env, Number(b), await readJson(request));
     if (b && method === "DELETE") {
       await env.DB.prepare("DELETE FROM sets WHERE workout_id = ?").bind(Number(b)).run();
+      await env.DB.prepare("DELETE FROM workout_notes WHERE workout_id = ?").bind(Number(b)).run();
       await env.DB.prepare("UPDATE activities SET workout_id = NULL WHERE workout_id = ?").bind(Number(b)).run();
       await env.DB.prepare("UPDATE uploads SET workout_id = NULL WHERE workout_id = ?").bind(Number(b)).run();
       await env.DB.prepare("DELETE FROM workouts WHERE id = ?").bind(Number(b)).run();
@@ -283,7 +285,35 @@ async function lastSetsFor(env, keys, beforeDate) {
     const rows = r.results || [];
     if (rows.length) out[keys[i]] = { date: rows[0].date, workout_id: rows[0].workout_id, sets: rows.map(({ set_index, weight_kg, reps, seconds, distance_m, rpe }) => ({ set_index, weight_kg, reps, seconds, distance_m, rpe })) };
   });
+  // The note written on that exercise last time, if any.
+  const found = Object.entries(out);
+  if (found.length) {
+    const noteRows = await env.DB.batch(found.map(([k, v]) => env.DB.prepare("SELECT note FROM workout_notes WHERE workout_id = ? AND block = ?").bind(v.workout_id, k)));
+    noteRows.forEach((r, i) => { const row = (r.results || [])[0]; if (row) out[found[i][0]].note = row.note; });
+  }
   return out;
+}
+
+// Upsert a note on one exercise or block of the day's workout. An empty note deletes the row.
+async function upsertBlockNote(env, date, body, settings) {
+  const templateKey = body.template_key || resolveDay(date, settings).templateKey;
+  if (!templateFor(templateKey)) bad("Unknown template");
+  const block = String(body.block || "").trim();
+  if (!block || block.length > 60 || !/^[a-z0-9_]+$/i.test(block)) bad("block must be an exercise key or warmup, jumps, finisher");
+  const w = await ensureWorkout(env, date, templateKey, settings);
+  const note = body.note == null ? "" : String(body.note).slice(0, 2000);
+  if (!note.trim()) await env.DB.prepare("DELETE FROM workout_notes WHERE workout_id = ? AND block = ?").bind(w.id, block).run();
+  else await env.DB.prepare("INSERT INTO workout_notes (workout_id, block, note, updated_at) VALUES (?, ?, ?, datetime('now')) ON CONFLICT(workout_id, block) DO UPDATE SET note = excluded.note, updated_at = datetime('now')").bind(w.id, block, note).run();
+  await env.DB.prepare("UPDATE workouts SET updated_at = datetime('now') WHERE id = ?").bind(w.id).run();
+  return { ok: true, workout_id: w.id, block, note: note.trim() ? note : null };
+}
+
+async function blockNotesFor(env, ids) {
+  const map = {};
+  if (!ids.length) return map;
+  const { results } = await env.DB.prepare(`SELECT workout_id, block, note FROM workout_notes WHERE workout_id IN (${placeholders(ids.length)})`).bind(...ids).all();
+  for (const r of results) { (map[r.workout_id] = map[r.workout_id] || {})[r.block] = r.note; }
+  return map;
 }
 
 async function getDay(env, date, settings) {
@@ -295,7 +325,8 @@ async function getDay(env, date, settings) {
     sets = (await env.DB.prepare(`SELECT * FROM sets WHERE workout_id IN (${placeholders(ids.length)}) ORDER BY exercise_key, set_index, id`).bind(...ids).all()).results;
     activities = (await env.DB.prepare(`SELECT id, upload_id, workout_id, start_time, sport, name, distance_m, duration_s, avg_hr, max_hr, avg_pace_s_per_km, best_5k_s, calories, elevation_gain_m FROM activities WHERE workout_id IN (${placeholders(ids.length)})`).bind(...ids).all()).results;
   }
-  const workouts = wrows.map((w) => ({ ...rowWithJson(w, ["plan_json", "checklist_json"]), sets: sets.filter((s) => s.workout_id === w.id), activities: activities.filter((x) => x.workout_id === w.id) }));
+  const notes = await blockNotesFor(env, ids);
+  const workouts = wrows.map((w) => ({ ...rowWithJson(w, ["plan_json", "checklist_json"]), sets: sets.filter((s) => s.workout_id === w.id), activities: activities.filter((x) => x.workout_id === w.id), block_notes: notes[w.id] || {} }));
   const active = workouts.find((w) => w.template_key === day.templateKey) || workouts.find((w) => w.status !== "skipped") || null;
   const keys = new Set(day.plan.map((e) => e.key));
   for (const w of workouts) for (const e of w.plan || []) keys.add(e.key);
@@ -390,7 +421,8 @@ async function getWorkout(env, id) {
   if (!w) throw new HttpError(404, "Workout not found");
   const { results: sets } = await env.DB.prepare("SELECT * FROM sets WHERE workout_id = ? ORDER BY exercise_key, set_index, id").bind(id).all();
   const { results: activities } = await env.DB.prepare("SELECT id, upload_id, start_time, sport, name, distance_m, duration_s, avg_hr, max_hr, avg_pace_s_per_km, best_5k_s, calories, elevation_gain_m FROM activities WHERE workout_id = ?").bind(id).all();
-  return { ...rowWithJson(w, ["plan_json", "checklist_json"]), sets, activities };
+  const notes = await blockNotesFor(env, [id]);
+  return { ...rowWithJson(w, ["plan_json", "checklist_json"]), sets, activities, block_notes: notes[id] || {} };
 }
 
 async function patchWorkout(env, id, body) {
@@ -531,7 +563,7 @@ async function handleUpload(request, env, settings) {
 
 // ---------- dashboard / export ----------
 async function getDashboard(env, settings, date) {
-  const [workouts, sets, body, tests, activities, nutrition, uploads, reports] = await Promise.all([
+  const [workouts, sets, body, tests, activities, nutrition, uploads, reports, notes] = await Promise.all([
     env.DB.prepare("SELECT id, date, template_key, kind, status, week_no, phase, duration_min, distance_km, time_sec, avg_hr, rpe, notes, started_at, finished_at, plan_json FROM workouts ORDER BY date, id").all(),
     env.DB.prepare("SELECT s.id, s.client_id, s.workout_id, s.exercise_key, s.set_index, s.weight_kg, s.reps, s.seconds, s.distance_m, s.rpe, w.date FROM sets s JOIN workouts w ON w.id = s.workout_id WHERE s.done = 1 ORDER BY w.date, s.workout_id, s.exercise_key, s.set_index").all(),
     env.DB.prepare("SELECT id, date, weight_kg, source, notes FROM body_metrics ORDER BY date").all(),
@@ -540,6 +572,7 @@ async function getDashboard(env, settings, date) {
     env.DB.prepare("SELECT id, date, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, source FROM nutrition_days ORDER BY date").all(),
     env.DB.prepare("SELECT id, workout_id, source, format, filename, size_bytes, parse_status, parse_error, uploaded_at FROM uploads ORDER BY uploaded_at DESC LIMIT 100").all(),
     env.DB.prepare("SELECT id, title, date, author, created_at FROM reports ORDER BY COALESCE(date, created_at) DESC, id DESC LIMIT 50").all(),
+    env.DB.prepare("SELECT n.workout_id, n.block, n.note, w.date FROM workout_notes n JOIN workouts w ON w.id = n.workout_id ORDER BY w.date, n.id").all(),
   ]);
   const today = resolveDay(date, settings);
   return {
@@ -554,6 +587,7 @@ async function getDashboard(env, settings, date) {
     nutrition: nutrition.results,
     uploads: uploads.results,
     reports: reports.results,
+    workout_notes: notes.results,
   };
 }
 
@@ -606,6 +640,7 @@ async function exportAll(env, settings, includeRaw) {
     program: { name: PROGRAM.name, start_date: settings.program_start_date, templates: Object.keys(PROGRAM.templates), exercises: PROGRAM.exercises },
     settings,
     workouts: (await q("SELECT * FROM workouts ORDER BY date, id")).map((w) => rowWithJson(w, ["plan_json", "checklist_json"])),
+    workout_notes: await q("SELECT * FROM workout_notes ORDER BY workout_id, id"),
     sets: await q("SELECT s.*, w.date FROM sets s JOIN workouts w ON w.id = s.workout_id ORDER BY w.date, s.workout_id, s.exercise_key, s.set_index"),
     body_metrics: await q("SELECT * FROM body_metrics ORDER BY date"),
     tests: await q("SELECT * FROM tests ORDER BY date"),

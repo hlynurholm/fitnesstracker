@@ -15,6 +15,7 @@ export async function buildSummaryMarkdown(env, settings, date) {
   const tests = await q("SELECT * FROM tests ORDER BY date");
   const activities = await q("SELECT * FROM activities ORDER BY COALESCE(date, start_time)");
   const nutrition = await q("SELECT * FROM nutrition_days ORDER BY date");
+  const blockNotes = await q("SELECT n.workout_id, n.block, n.note, w.date, w.template_key FROM workout_notes n JOIN workouts w ON w.id = n.workout_id ORDER BY w.date, n.id");
 
   const lines = [];
   lines.push(`# Fitness data summary`);
@@ -105,6 +106,17 @@ export async function buildSummaryMarkdown(env, settings, date) {
     }
   }
   lines.push(``);
+
+  // Notes on exercises and blocks
+  if (blockNotes.length) {
+    lines.push(`## Exercise notes`);
+    const recent = blockNotes.slice(-60);
+    for (const n of recent) {
+      const label = ["warmup", "jumps", "finisher"].includes(n.block) ? (n.block === "warmup" ? "Warm-up" : n.block === "jumps" ? "Jumps" : "Finisher") : exerciseFor(n.block).name;
+      lines.push(`- ${n.date} ${templateFor(n.template_key).name}, ${label}: ${n.note.replace(/\s+/g, " ")}`);
+    }
+    lines.push(``);
+  }
 
   // Nutrition
   lines.push(`## Nutrition (MyFitnessPal)`);

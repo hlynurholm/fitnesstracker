@@ -43,15 +43,61 @@ class DayView {
     this.template = templateFor(this.templateKey);
     this.plan = this.workout && Array.isArray(this.workout.plan) && this.workout.plan.length ? this.workout.plan : this.day.templateKey === this.templateKey ? this.day.plan : buildPlanFor(this.templateKey, this.day.week);
     this.checklist = (this.workout && this.workout.checklist) || {};
+    this.blockNotes = { ...((this.workout && this.workout.block_notes) || {}) }; // exercise key or warmup | jumps | finisher
     this.rows = {};
     this.lastTick = null;
     this.timer = null;
+    this.countdown = null; // running set countdown { label, endsAt, stop }
+    this.wakeLock = null;
     this.editing = false; // a finished workout opened for corrections
     this.initRows();
     this.saveWorkoutDebounced = debounce((patch) => this.saveWorkout(patch), 600);
+    this.noteSavers = {};
+    this.onVisible = () => { if (document.visibilityState === "visible" && this.mode() === "log") this.keepAwake(); };
+    document.addEventListener("visibilitychange", this.onVisible);
   }
 
-  destroy() { if (this.timer) clearInterval(this.timer); }
+  destroy() {
+    if (this.timer) clearInterval(this.timer);
+    if (this.countdown) this.countdown.stop(true);
+    document.removeEventListener("visibilitychange", this.onVisible);
+    this.releaseWakeLock();
+    this.container.classList.remove("with-bar");
+  }
+
+  // Keep the screen on while logging. Safari and Chrome support it; elsewhere it quietly does nothing.
+  async keepAwake() {
+    if (!("wakeLock" in navigator) || this.wakeLock) return;
+    try { this.wakeLock = await navigator.wakeLock.request("screen"); this.wakeLock.addEventListener("release", () => { this.wakeLock = null; }); } catch { this.wakeLock = null; }
+  }
+  releaseWakeLock() { if (this.wakeLock) { try { this.wakeLock.release(); } catch {} this.wakeLock = null; } }
+
+  // ---------- notes per exercise or block ----------
+  saveNote(block, text) {
+    this.blockNotes[block] = text;
+    if (!this.noteSavers[block]) this.noteSavers[block] = debounce(async (t) => {
+      const body = { template_key: this.templateKey, block, note: t };
+      const r = await queuedWrite("PUT", `/api/day/${this.date}/notes`, body, `note:${this.date}:${this.templateKey}:${block}`);
+      if (r.ok && r.data && r.data.workout_id && !this.workout) { this.workout = { id: r.data.workout_id, template_key: this.templateKey, status: "in_progress", sets: [] }; store.set(`ft_active_${this.date}`, this.templateKey); }
+      this.refreshCache();
+    }, 700);
+    this.noteSavers[block](text);
+  }
+
+  // A "Note" toggle with an auto-growing textarea under it. Open from the start when a note exists.
+  noteField(block, placeholder) {
+    const existing = this.blockNotes[block] || "";
+    const wrap = h("div", { class: "note-field" + (existing ? " open" : "") });
+    const ta = h("textarea", { rows: 1, placeholder, "aria-label": placeholder });
+    ta.value = existing;
+    const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(200, ta.scrollHeight) + "px"; };
+    ta.addEventListener("input", () => { grow(); this.saveNote(block, ta.value); });
+    const btn = h("button", { class: "btn text note-toggle", onClick: () => { wrap.classList.add("open"); ta.focus(); requestAnimationFrame(grow); } }, existing ? "Note" : "+ Note");
+    wrap.appendChild(btn);
+    wrap.appendChild(ta);
+    if (existing) requestAnimationFrame(grow);
+    return wrap;
+  }
 
   initRows() {
     const sets = Object.keys(this.rows).length ? this.allSets() : this.workout ? this.workout.sets || [] : [];
@@ -88,7 +134,7 @@ class DayView {
   refreshCache() {
     const d = this.data;
     const idx = d.workouts.findIndex((w) => w.template_key === this.templateKey);
-    const merged = { ...(this.workout || { template_key: this.templateKey, date: this.date, status: "in_progress" }), sets: this.allSets(), plan: this.plan, checklist: this.checklist };
+    const merged = { ...(this.workout || { template_key: this.templateKey, date: this.date, status: "in_progress" }), sets: this.allSets(), plan: this.plan, checklist: this.checklist, block_notes: this.blockNotes };
     if (idx >= 0) d.workouts[idx] = merged; else d.workouts.push(merged);
     d.active = merged;
     store.set(`ft_day_${this.date}`, d);
@@ -142,6 +188,8 @@ class DayView {
   render() {
     const c = this.container;
     clear(c);
+    c.classList.remove("with-bar");
+    if (this.template.kind === "lift" && this.mode() === "log") this.keepAwake(); else this.releaseWakeLock();
     const day = this.day;
     const isToday = this.date === this.today;
     if (this.offline) c.appendChild(h("div", { class: "banner" }, "Offline: showing the last saved copy of this day. New entries are saved on the phone and synced later."));
@@ -236,8 +284,7 @@ class DayView {
         head.appendChild(h("button", { class: "btn primary wide", style: { marginTop: ".9rem" }, onClick: () => this.startWorkout() }, "Start workout"));
         cards.push(head, this.planCard(), this.actionsCard());
       } else if (mode === "log") {
-        head.appendChild(h("div", { class: "timer-row", dataset: { timer: "1" } }));
-        cards.push(head, ...this.liftCards(), this.finishCard(), this.actionsCard());
+        cards.push(head, ...this.liftCards(), this.finishCard(), this.actionsCard(), this.timerBar());
       } else {
         cards.push(head, ...this.summaryCards(), this.actionsCard());
       }
@@ -299,11 +346,13 @@ class DayView {
     for (const e of this.plan) {
       const ex = exerciseFor(e.key);
       const sets = done.filter((s) => s.exercise_key === e.key).sort((a, b) => a.set_index - b.set_index);
-      list.appendChild(h("div", { class: "list-item" }, h("div", null, h("div", { class: "title" }, ex.name), h("div", { class: "sub" }, sets.length ? describeSets(ex, sets) : "not logged")), h("span", { class: `badge ${sets.length ? "ok" : ""}` }, `${sets.length}${e.sets ? `/${e.sets}` : ""}`)));
+      const note = this.blockNotes[e.key];
+      list.appendChild(h("div", { class: "list-item" }, h("div", null, h("div", { class: "title" }, ex.name), h("div", { class: "sub" }, sets.length ? describeSets(ex, sets) : "not logged"), note ? h("div", { class: "sub note" }, note) : null), h("span", { class: `badge ${sets.length ? "ok" : ""}` }, `${sets.length}${e.sets ? `/${e.sets}` : ""}`)));
     }
     card.appendChild(list);
     const blocks = ["warmup", "jumps", "finisher"].filter((b) => this.template.blocks.includes(b) && this.checklist[b]);
-    if (blocks.length) card.appendChild(h("p", { class: "muted small", style: { margin: ".8rem 0 0" } }, blocks.map((b) => `${b === "warmup" ? "Warm-up" : b === "jumps" ? "Jumps" : "Finisher"} ${Object.values(this.checklist[b]).filter(Boolean).length} ticked`).join(" · ")));
+    if (blocks.length) card.appendChild(h("p", { class: "muted small", style: { margin: ".8rem 0 0" } }, blocks.map((b) => `${BLOCK_NAMES[b]} ${Object.values(this.checklist[b]).filter(Boolean).length} ticked`).join(" · ")));
+    for (const b of ["warmup", "jumps", "finisher"]) if (this.blockNotes[b]) card.appendChild(h("p", { class: "small", style: { margin: ".4rem 0 0" } }, h("span", { class: "muted" }, `${BLOCK_NAMES[b]}: `), this.blockNotes[b]));
     if (w.notes) card.appendChild(h("p", { style: { margin: ".8rem 0 0" } }, w.notes));
     card.appendChild(h("button", { class: "btn tinted wide", style: { marginTop: "1rem" }, onClick: () => { this.editing = true; this.render(); } }, "Edit workout"));
     cards.push(card);
@@ -349,6 +398,7 @@ class DayView {
       });
       det.appendChild(label);
     }
+    det.appendChild(this.noteField(blockId, `Note on the ${(BLOCK_NAMES[blockId] || title.replace(/\s*\(.*\)$/, "")).toLowerCase()}`));
     return det;
   }
 
@@ -364,7 +414,7 @@ class DayView {
         h("div", { class: "ex-target" }, [target, e.note, ex.kgHint ? `kg = ${ex.kgHint}` : null].filter(Boolean).join(" · "))),
       h("button", { class: "btn more", "aria-label": "Exercise options", onClick: () => this.exerciseMenu(e) }, "···"));
     block.appendChild(head);
-    if (last) block.appendChild(h("div", { class: "ex-last" }, `Last time (${fmtShort(last.date)}): ${describeSets(ex, last.sets)}`));
+    if (last) block.appendChild(h("div", { class: "ex-last" }, `Last time (${fmtShort(last.date)}): ${describeSets(ex, last.sets)}`, last.note ? h("div", { class: "ex-last-note" }, `“${last.note}”`) : null));
     const hint = progressionHint(ex, e, last);
     if (hint) block.appendChild(h("div", { class: "hint" }, hint));
 
@@ -374,8 +424,11 @@ class DayView {
     const rowsEl = h("div", { class: "set-rows" });
     rows.forEach((row, i) => rowsEl.appendChild(this.setRow(e, ex, row, i, fields)));
     block.appendChild(rowsEl);
+    const note = this.noteField(e.key, `Note on ${ex.short || ex.name}`);
     block.appendChild(h("div", { class: "set-foot" },
-      h("button", { class: "btn text", onClick: () => { rows.push({ client_id: uuid(), set_index: rows.length, kg: null, reps: null, seconds: null, meters: null, saved: false }); rowsEl.appendChild(this.setRow(e, ex, rows[rows.length - 1], rows.length - 1, fields)); } }, "+ Add set"),
+      h("div", { class: "row", style: { gap: ".2rem" } },
+        h("button", { class: "btn text", onClick: () => { rows.push({ client_id: uuid(), set_index: rows.length, kg: null, reps: null, seconds: null, meters: null, saved: false }); rowsEl.appendChild(this.setRow(e, ex, rows[rows.length - 1], rows.length - 1, fields)); } }, "+ Add set"),
+        note.querySelector(".note-toggle")),
       h("button", { class: "btn text muted", onClick: async () => {
         const row = rows[rows.length - 1];
         if (!row) return;
@@ -383,6 +436,7 @@ class DayView {
         await this.deleteSet(e.key, row);
         rowsEl.lastChild && rowsEl.removeChild(rowsEl.lastChild);
       } }, "Remove set")));
+    block.appendChild(note);
     return block;
   }
 
@@ -413,18 +467,23 @@ class DayView {
       inp.addEventListener("input", () => { row[f] = inp.value === "" ? null : Number(inp.value); inp.classList.toggle("filled", row[f] != null); save(); });
       inp.addEventListener("focus", () => inp.select());
       inputs[f] = inp;
-      rowEl.appendChild(h("div", { class: "cell" }, inp, h("span", { class: "unit" }, FIELD_META[f].label)));
+      const cell = h("div", { class: "cell" + (f === "seconds" ? " has-count" : "") }, inp);
+      if (f === "seconds") {
+        // Countdown: runs from the typed value or the placeholder, then logs the set. Tap again to stop early.
+        const go = h("button", { class: "count-btn", "aria-label": "Start countdown", title: "Start countdown" }, "▶");
+        go.addEventListener("click", () => {
+          if (this.countdown && this.countdown.row === row) { this.countdown.stop(); return; }
+          if (this.countdown) this.countdown.stop(true);
+          const target = Number(inp.value || this.placeholderFor(ex, e, rows, i, "seconds")) || 0;
+          if (!target) { toast("Type the seconds first"); return; }
+          this.runCountdown({ row, target, inp, go, label: ex.short || ex.name, onDone: () => { row.seconds = target; inp.value = String(target); inp.classList.add("filled"); complete(); } });
+        });
+        cell.appendChild(go);
+      } else cell.appendChild(h("span", { class: "unit" }, FIELD_META[f].label));
+      rowEl.appendChild(cell);
     }
-    tick.addEventListener("click", () => {
-      if (row.saved) {
-        // Untick: keep the numbers, mark the set as not done.
-        row.saved = false;
-        tick.classList.remove("done");
-        save.flush();
-        this.updateStatusBadge();
-        return;
-      }
-      // Empty fields take the placeholder (last time or previous set), then the set is saved.
+    // Empty fields take the placeholder (last time or previous set), then the set is saved.
+    const complete = () => {
       for (const f of fields) {
         if (row[f] == null || row[f] === "") {
           const ph = this.placeholderFor(ex, e, rows, i, f);
@@ -438,9 +497,49 @@ class DayView {
       // Update placeholders of the next row.
       const next = rowEl.nextSibling;
       if (next) next.querySelectorAll("input").forEach((inp, idx) => { const f = fields[idx]; if (!inp.value) inp.placeholder = String(this.placeholderFor(ex, e, rows, i + 1, f)); });
+    };
+    tick.addEventListener("click", () => {
+      if (row.saved) {
+        // Untick: keep the numbers, mark the set as not done.
+        row.saved = false;
+        tick.classList.remove("done");
+        save.flush();
+        this.updateStatusBadge();
+        return;
+      }
+      complete();
     });
     rowEl.appendChild(tick);
     return rowEl;
+  }
+
+  // Set countdown shown in the input and in the timer bar. Buzzes and beeps at zero, then logs the set.
+  runCountdown({ row, target, inp, go, label, onDone }) {
+    const audio = makeAudio();
+    const startedAt = Date.now();
+    const endsAt = startedAt + target * 1000;
+    inp.readOnly = true; inp.classList.add("counting"); go.textContent = "■"; go.classList.add("running");
+    let lastShown = null;
+    const tickFn = () => {
+      const left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      if (left !== lastShown) { inp.value = String(left); lastShown = left; if (left <= 3 && left > 0 && audio) audio.beep(880, 0.08); }
+      if (left <= 0) { finish(); }
+    };
+    const iv = setInterval(tickFn, 200);
+    const cleanup = () => { clearInterval(iv); inp.readOnly = false; inp.classList.remove("counting"); go.textContent = "▶"; go.classList.remove("running"); this.countdown = null; };
+    const finish = () => { cleanup(); buzz(); if (audio) { audio.beep(1320, 0.25); setTimeout(() => audio.beep(1320, 0.35), 300); } onDone(); };
+    const stop = (silent) => { cleanup(); if (silent) { inp.value = row.seconds ?? ""; return; } const elapsed = Math.round((Date.now() - startedAt) / 1000); row.seconds = elapsed; inp.value = String(elapsed); inp.classList.add("filled"); toast(`Stopped at ${elapsed} s`); };
+    this.countdown = { row, label, endsAt, stop };
+    tickFn();
+  }
+
+  // Fixed bar above the tabs: workout time, rest since the last tick, and a running countdown.
+  timerBar() {
+    this.container.classList.add("with-bar");
+    return h("div", { class: "timer-bar", dataset: { timer: "1" } },
+      h("div", { class: "tb-item" }, h("span", { class: "tb-label" }, "Workout"), h("span", { class: "tb-value", dataset: { tbWorkout: "1" } }, "0:00")),
+      h("div", { class: "tb-item" }, h("span", { class: "tb-label" }, "Rest"), h("span", { class: "tb-value", dataset: { tbRest: "1" } }, "–")),
+      h("div", { class: "tb-item tb-count", dataset: { tbCount: "1" }, hidden: true }, h("span", { class: "tb-label", dataset: { tbCountLabel: "1" } }, ""), h("span", { class: "tb-value", dataset: { tbCountValue: "1" } }, "")));
   }
 
   exerciseMenu(e) {
@@ -609,7 +708,8 @@ class DayView {
   finishCard() {
     const st = this.workout ? this.workout.status : "in_progress";
     const card = h("div", { class: "card" });
-    const ta = h("textarea", { placeholder: "How it felt, knees, anything for later", value: (this.workout && this.workout.notes) || "" });
+    const ta = h("textarea", { placeholder: "How it felt, knees, anything for later" });
+    ta.value = (this.workout && this.workout.notes) || "";
     ta.addEventListener("input", () => this.saveWorkoutDebounced({ notes: ta.value }));
     card.appendChild(h("label", { class: "field" }, h("span", null, "Notes"), ta));
     if (st !== "done") card.appendChild(h("button", { class: "btn primary wide", onClick: () => this.finishDialog() }, this.template.kind === "rest" ? "Mark day done" : this.template.kind === "lift" ? "Finish workout" : "Finish session"));
@@ -723,19 +823,40 @@ class DayView {
 
   startTimer() {
     if (this.timer) clearInterval(this.timer);
-    this.timer = setInterval(() => {
+    const update = () => {
       const el = this.container.querySelector("[data-timer]");
       if (!el) return;
-      const parts = [];
       const w = this.workout;
-      if (w && w.started_at && w.status !== "done") parts.push(`Workout ${secondsToHms(Math.max(0, (Date.now() - parseWhen(w.started_at)) / 1000))}`);
-      if (this.lastTick) parts.push(`Rest ${secondsToHms(Math.round((Date.now() - this.lastTick) / 1000))}`);
-      el.textContent = parts.join(" · ");
-    }, 1000);
+      const workoutText = w && w.started_at && w.status !== "done" ? secondsToHms(Math.max(0, (Date.now() - parseWhen(w.started_at)) / 1000)) : null;
+      const restText = this.lastTick ? secondsToHms(Math.round((Date.now() - this.lastTick) / 1000)) : null;
+      if (el.classList.contains("timer-bar")) {
+        el.querySelector("[data-tb-workout]").textContent = workoutText || (w && w.status === "done" ? "done" : "0:00");
+        el.querySelector("[data-tb-rest]").textContent = restText || "–";
+        const c = el.querySelector("[data-tb-count]");
+        if (this.countdown) { c.hidden = false; el.querySelector("[data-tb-count-label]").textContent = this.countdown.label; el.querySelector("[data-tb-count-value]").textContent = secondsToHms(Math.max(0, Math.ceil((this.countdown.endsAt - Date.now()) / 1000))); }
+        else c.hidden = true;
+        return;
+      }
+      el.textContent = [workoutText ? `Workout ${workoutText}` : null, restText ? `Rest ${restText}` : null].filter(Boolean).join(" · ");
+    };
+    this.timer = setInterval(update, 500);
+    update();
   }
 }
 
+const BLOCK_NAMES = { warmup: "Warm-up", jumps: "Jumps", finisher: "Finisher" };
 function isDone(s) { return s.done == null ? true : Number(s.done) !== 0; }
+function buzz() { try { if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]); } catch {} }
+// Short beeps through WebAudio. Created inside the tap handler so iOS allows it.
+function makeAudio() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    const ctx = new Ctx();
+    if (ctx.state === "suspended") ctx.resume();
+    return { beep(freq, dur) { try { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = freq; o.type = "sine"; g.gain.value = 0.15; o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + dur); } catch {} } };
+  } catch { return null; }
+}
 function parseWhen(v) {
   if (!v) return NaN;
   const d = new Date(/[TZ]/.test(v) ? v : v.replace(" ", "T") + "Z");

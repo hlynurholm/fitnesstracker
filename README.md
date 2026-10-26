@@ -6,6 +6,8 @@ What it does:
 
 - Shows the session for any day: Lift A, B or C with warm-up, jump drills for the current phase and every lift with sets and reps, or the run with its distance and structure, or a rest day. Deload weeks and test weeks are marked.
 - Calendar: a month view of every planned session. Tap a day to open it, swap it with another day, or change which session happens that day. Moved days are marked and "Back to the plan" undoes it. The same options sit under "Move or change this session" in the day view.
+- Notes on every exercise and on the warm-up, jumps and finisher blocks, shown again next time that exercise comes up (`workout_notes` table, `PUT /api/day/:date/notes`).
+- While logging, the workout time and the rest since the last tick sit in a bar above the tabs. Timed sets (planks, marches) have a countdown button that buzzes and beeps at zero and logs the set.
 - Logs kg and reps (or seconds, metres) per set. Last time's numbers are pre-filled as placeholders; the tick button accepts them with one tap. Works offline and syncs later.
 - Charts progression per lift (estimated 1RM, top set, volume), several lifts overlaid, body weight with 7-day average against the 85 kg goal, running pace and 5 km times, nutrition against targets, and a session heatmap.
 - Takes Garmin exports (FIT, TCX, GPX, CSV) attached to a run and MyFitnessPal CSV exports. Parses what it can (splits, heart rate zones, best 5 km, daily calories and protein) and keeps the original file.

@@ -34,8 +34,15 @@ j -X PUT -d '{"date":"2026-10-26","template_key":"lift_a","exercise_key":"copenh
 out=$(j "$BASE/api/day/2026-10-26"); check "day returns the 4 logged sets" '[[ "$out" == *testset0001* && "$out" == *testset0002* && "$out" == *testset0003* && "$out" == *testset0004* ]]'
 # finish workout with rpe and notes and checklist
 out=$(j -X PUT -d '{"template_key":"lift_a","status":"done","rpe":7,"notes":"knees fine","checklist":{"warmup":{"bike":true}}}' "$BASE/api/day/2026-10-26/workout"); check "workout done with rpe" '[[ "$out" == *"\"rpe\":7"* && "$out" == *"\"status\":\"done\""* ]]'
+# notes per exercise and block
+out=$(j -X PUT -d '{"template_key":"lift_a","block":"back_squat","note":"Bar speed good, knees fine"}' "$BASE/api/day/2026-10-26/notes"); check "exercise note saved" '[[ "$out" == *"\"block\":\"back_squat\""* && "$out" == *"knees fine"* ]]'
+j -X PUT -d '{"template_key":"lift_a","block":"warmup","note":"Skipped the bike"}' "$BASE/api/day/2026-10-26/notes" >/dev/null
+out=$(j "$BASE/api/day/2026-10-26"); check "day returns block notes" '[[ "$out" == *"\"block_notes\":{"* && "$out" == *"Skipped the bike"* ]]'
+code=$(curl -s -o /dev/null -w "%{http_code}" -b "$JAR" -H "Content-Type: application/json" -X PUT -d '{"template_key":"lift_a","block":"bad key!","note":"x"}' "$BASE/api/day/2026-10-26/notes"); check "bad note block rejected (400)" '[ "$code" = "400" ]'
+out=$(j -X PUT -d '{"template_key":"lift_a","block":"warmup","note":""}' "$BASE/api/day/2026-10-26/notes"); check "empty note deletes it" '[[ "$out" == *"\"note\":null"* ]]'
 # last values show up on the next Lift A (2 Nov)
 out=$(j "$BASE/api/day/2026-11-02"); check "next Lift A shows last values" '[[ "$out" == *"\"last\":{"* && "$out" == *"back_squat"* && "$out" == *"77.5"* ]]'
+check "next Lift A shows last time's note" '[[ "$out" == *"knees fine"* ]]'
 # schedule: move sessions between days
 out=$(j "$BASE/api/schedule?from=2026-11-02&to=2026-11-08"); check "schedule range lists 7 days" '[[ "$out" == *"\"days\":[{"* && "$out" == *"2026-11-08"* ]]'
 out=$(j -X POST -d '{"a":"2026-11-02","b":"2026-11-03"}' "$BASE/api/schedule/swap"); check "swap Mon and Tue of week 2" '[[ "$out" == *"\"moved\":true"* ]]'

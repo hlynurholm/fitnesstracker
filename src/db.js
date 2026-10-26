@@ -60,7 +60,7 @@ export async function ensureWorkout(env, date, templateKey, settings) {
   const plan = buildPlan(templateKey, day.week);
   await env.DB.prepare(
     `INSERT INTO workouts (date, template_key, kind, status, week_no, phase, plan_json, started_at)
-     VALUES (?, ?, ?, 'in_progress', ?, ?, ?, datetime('now'))`
+     VALUES (?, ?, ?, 'in_progress', ?, ?, ?, NULL)`
   ).bind(date, templateKey, t.kind, day.week, day.phase, plan.length ? JSON.stringify(plan) : null).run();
   return env.DB.prepare("SELECT * FROM workouts WHERE date = ? AND template_key = ?").bind(date, templateKey).first();
 }

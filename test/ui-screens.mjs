@@ -23,8 +23,23 @@ async function login(ctx) {
 // Phone
 const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: "light" });
 const p = await login(phone);
-await p.waitForSelector(".exercise");
+await p.waitForSelector(".session-card");
 await p.screenshot({ path: `${out}/phone-today.png`, fullPage: true });
+
+// A fresh lifting day: overview only, no inputs until Start workout. Remove leftovers from an earlier run first.
+await p.evaluate(async () => {
+  const d = await (await fetch("/api/day/2026-11-09", { cache: "no-store" })).json();
+  for (const w of d.workouts || []) if (w.id) await fetch(`/api/workouts/${w.id}`, { method: "DELETE" });
+  for (const k of Object.keys(localStorage)) if (k.includes("2026-11-09")) localStorage.removeItem(k);
+});
+await p.goto(base + "/day/2026-11-09");
+await p.waitForSelector(".session-card");
+if (await p.locator(".exercise").count() !== 0) errors.push("overview shows inputs before start");
+await p.screenshot({ path: `${out}/phone-overview.png`, fullPage: true });
+await p.locator("button", { hasText: "Start workout" }).click();
+await p.waitForSelector(".exercise");
+if (!(await p.locator(".timer-row").textContent()).includes("Workout")) { await p.waitForTimeout(1200); }
+await p.screenshot({ path: `${out}/phone-logging.png`, fullPage: true });
 
 // Log a set: type kg and reps, tick.
 const bench = p.locator('.exercise[data-key="db_bench"] .set-row').first();
@@ -33,6 +48,9 @@ await bench.locator("input").nth(1).fill("8");
 await bench.locator(".tick").click();
 // Tick the second set with empty fields: should take placeholders from the first set.
 await p.locator('.exercise[data-key="db_bench"] .set-row').nth(1).locator(".tick").click();
+// Third set: type a value but do not tick (draft), then untick the second set.
+await p.locator('.exercise[data-key="db_bench"] .set-row').nth(2).locator("input").nth(0).fill("32.5");
+await p.locator('.exercise[data-key="db_bench"] .set-row').nth(1).locator(".tick").click();
 await p.waitForTimeout(1500);
 await p.reload();
 await p.waitForSelector(".exercise");
@@ -40,8 +58,13 @@ const rows = p.locator('.exercise[data-key="db_bench"] .set-row');
 const kg0 = await rows.nth(0).locator("input").nth(0).inputValue();
 const kg1 = await rows.nth(1).locator("input").nth(0).inputValue();
 const reps1 = await rows.nth(1).locator("input").nth(1).inputValue();
-console.log(`persisted after reload: set1 kg=${kg0}, set2 kg=${kg1} reps=${reps1}`);
-if (kg0 !== "30" || kg1 !== "30" || reps1 !== "8") errors.push("set persistence failed");
+const kg2 = await rows.nth(2).locator("input").nth(0).inputValue();
+const done0 = await rows.nth(0).locator(".tick").evaluate((el) => el.classList.contains("done"));
+const done1 = await rows.nth(1).locator(".tick").evaluate((el) => el.classList.contains("done"));
+const done2 = await rows.nth(2).locator(".tick").evaluate((el) => el.classList.contains("done"));
+console.log(`persisted after reload: set1 kg=${kg0} done=${done0}, set2 kg=${kg1} reps=${reps1} done=${done1}, set3 kg=${kg2} done=${done2}`);
+if (kg0 !== "30" || kg1 !== "30" || reps1 !== "8" || kg2 !== "32.5") errors.push("set persistence failed");
+if (!done0 || done1 || done2) errors.push("tick state wrong after untick/draft");
 await p.screenshot({ path: `${out}/phone-today-logged.png`, fullPage: false });
 
 // Warm-up checklist tick persists
@@ -53,14 +76,22 @@ const checked = await p.locator("details .check input").first().isChecked();
 console.log("warm-up tick persisted:", checked);
 if (!checked) errors.push("checklist persistence failed");
 
-// Run day, week 1 Tuesday
-await p.goto(base + "/day/2026-10-27");
-await p.waitForSelector(".session-card");
-await p.screenshot({ path: `${out}/phone-run-day.png`, fullPage: true });
-// Rest day
-await p.goto(base + "/day/2026-10-31");
-await p.waitForSelector(".session-card");
-await p.screenshot({ path: `${out}/phone-rest-day.png`, fullPage: true });
+// Finish the workout: summary with duration, then edit and back
+await p.locator("button", { hasText: "Finish workout" }).click();
+await p.locator(".rpe button").nth(6).click();
+await p.locator(".modal .btn.primary", { hasText: "Done" }).click();
+await p.waitForTimeout(800);
+if (await p.locator(".exercise").count() !== 0) errors.push("summary still shows inputs");
+const results = await p.locator(".card", { hasText: "Results" }).first().textContent();
+console.log("summary:", results.replace(/\s+/g, " ").slice(0, 120));
+if (!/30 kg × 8/.test(results) || !/RPE 7/.test(results)) errors.push("summary missing results or RPE");
+await p.screenshot({ path: `${out}/phone-summary.png`, fullPage: true });
+await p.locator("button", { hasText: "Edit workout" }).click();
+await p.waitForSelector(".exercise");
+await p.locator("button", { hasText: "Done editing" }).click();
+await p.waitForTimeout(300);
+if (await p.locator(".exercise").count() !== 0) errors.push("done editing did not return to summary");
+
 // Week strip highlights the selected day, not today
 await p.goto(base + "/day/2026-10-29"); await p.waitForSelector(".week-strip");
 const selText = await p.locator(".week-day.selected b").textContent();
@@ -96,8 +127,10 @@ await phone.close();
 // Desktop, dark mode
 const desk = await browser.newContext({ viewport: { width: 1366, height: 900 }, colorScheme: "dark" });
 const d = await login(desk);
-await d.waitForSelector(".exercise");
+await d.waitForSelector(".card");
 await d.screenshot({ path: `${out}/desktop-today.png`, fullPage: false });
+await d.goto(base + "/day/2026-11-09"); await d.waitForSelector(".card"); await d.waitForTimeout(400);
+await d.screenshot({ path: `${out}/desktop-summary.png`, fullPage: false });
 await d.goto(base + "/calendar"); await d.waitForSelector(".cal-cell"); await d.screenshot({ path: `${out}/desktop-calendar.png`, fullPage: false });
 await d.goto(base + "/progress"); await d.waitForSelector(".tiles"); await d.waitForTimeout(1000);
 await d.screenshot({ path: `${out}/desktop-progress.png`, fullPage: true });

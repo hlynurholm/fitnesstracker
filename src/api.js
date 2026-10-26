@@ -260,9 +260,9 @@ async function lastSetsFor(env, keys, beforeDate) {
     env.DB.prepare(
       `SELECT s.exercise_key, s.set_index, s.weight_kg, s.reps, s.seconds, s.distance_m, s.rpe, w.date, w.id AS workout_id
        FROM sets s JOIN workouts w ON w.id = s.workout_id
-       WHERE s.exercise_key = ? AND w.date < ? AND w.id = (
+       WHERE s.exercise_key = ? AND s.done = 1 AND w.date < ? AND w.id = (
          SELECT w2.id FROM workouts w2 JOIN sets s2 ON s2.workout_id = w2.id
-         WHERE s2.exercise_key = ? AND w2.date < ? ORDER BY w2.date DESC, w2.id DESC LIMIT 1)
+         WHERE s2.exercise_key = ? AND s2.done = 1 AND w2.date < ? ORDER BY w2.date DESC, w2.id DESC LIMIT 1)
        ORDER BY s.set_index, s.id`
     ).bind(k, beforeDate, k, beforeDate)
   );

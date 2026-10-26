@@ -292,3 +292,5 @@ details summary::-webkit-details-marker { display: none; }
 details summary::after { content: "›"; color: var(--muted-2); font-size: 1.4rem; font-weight: 400; transform: rotate(90deg); transition: transform .15s; line-height: 1; }
 details[open] summary::after { transform: rotate(-90deg); }
 details summary .badge { margin-left: .4rem; }
+.timer-row { margin-top: .8rem; padding-top: .7rem; border-top: 1px solid var(--sep); font-variant-numeric: tabular-nums; font-weight: 600; color: var(--accent); min-height: 1.4em; }
+.timer-row:empty { display: none; }

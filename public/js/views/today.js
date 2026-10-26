@@ -46,6 +46,7 @@ class DayView {
     this.rows = {};
     this.lastTick = null;
     this.timer = null;
+    this.editing = false; // a finished workout opened for corrections
     this.initRows();
     this.saveWorkoutDebounced = debounce((patch) => this.saveWorkout(patch), 600);
   }
@@ -57,7 +58,7 @@ class DayView {
     this.rows = {};
     for (const e of this.plan) {
       const existing = sets.filter((s) => s.exercise_key === e.key).sort((a, b) => a.set_index - b.set_index || a.id - b.id);
-      const rows = existing.map((s) => ({ client_id: s.client_id, set_index: s.set_index, kg: s.weight_kg, reps: s.reps, seconds: s.seconds, meters: s.distance_m, saved: true }));
+      const rows = existing.map((s) => ({ client_id: s.client_id, set_index: s.set_index, kg: s.weight_kg, reps: s.reps, seconds: s.seconds, meters: s.distance_m, saved: isDone(s), touched: true }));
       while (rows.length < e.sets) rows.push({ client_id: uuid(), set_index: rows.length, kg: null, reps: null, seconds: null, meters: null, saved: false });
       this.rows[e.key] = rows;
     }
@@ -67,7 +68,7 @@ class DayView {
       this.rows[s.exercise_key] = [];
     }
     for (const s of sets) if (!this.rows[s.exercise_key].some((r) => r.client_id === s.client_id)) {
-      this.rows[s.exercise_key].push({ client_id: s.client_id, set_index: s.set_index, kg: s.weight_kg, reps: s.reps, seconds: s.seconds, meters: s.distance_m, saved: true });
+      this.rows[s.exercise_key].push({ client_id: s.client_id, set_index: s.set_index, kg: s.weight_kg, reps: s.reps, seconds: s.seconds, meters: s.distance_m, saved: isDone(s), touched: true });
     }
   }
 
@@ -93,20 +94,22 @@ class DayView {
     store.set(`ft_day_${this.date}`, d);
   }
 
+  // Every row with a value, ticked or draft (done 0). Used for the cache and for rebuilding rows.
   allSets() {
     const out = [];
-    for (const [key, rows] of Object.entries(this.rows)) for (const r of rows) if (r.saved) out.push({ client_id: r.client_id, exercise_key: key, set_index: r.set_index, weight_kg: r.kg, reps: r.reps, seconds: r.seconds, distance_m: r.meters });
+    for (const [key, rows] of Object.entries(this.rows)) for (const r of rows) if (r.saved || r.touched) out.push({ client_id: r.client_id, exercise_key: key, set_index: r.set_index, weight_kg: r.kg, reps: r.reps, seconds: r.seconds, distance_m: r.meters, done: r.saved ? 1 : 0 });
     return out;
   }
+  doneSets() { return this.allSets().filter((s) => s.done); }
 
   async saveSet(key, row) {
     const ex = exerciseFor(key);
     const hasValue = ex.fields.some((f) => row[f] != null && row[f] !== "");
     if (!hasValue) return;
-    row.saved = true;
-    this.lastTick = Date.now();
+    row.touched = true;
+    if (row.saved) this.lastTick = Date.now();
     this.refreshCache();
-    const body = { date: this.date, template_key: this.templateKey, exercise_key: key, set_index: row.set_index, weight_kg: row.kg, reps: row.reps, seconds: row.seconds, distance_m: row.meters, done: 1 };
+    const body = { date: this.date, template_key: this.templateKey, exercise_key: key, set_index: row.set_index, weight_kg: row.kg, reps: row.reps, seconds: row.seconds, distance_m: row.meters, done: row.saved ? 1 : 0 };
     const r = await queuedWrite("PUT", `/api/sets/${row.client_id}`, body, `set:${row.client_id}`);
     if (r.ok && r.data && r.data.workout_id && !this.workout) {
       this.workout = { id: r.data.workout_id, template_key: this.templateKey, status: "in_progress", sets: [] };
@@ -119,7 +122,7 @@ class DayView {
     const rows = this.rows[key];
     rows.splice(rows.indexOf(row), 1);
     rows.forEach((r, i) => (r.set_index = i));
-    if (row.saved) {
+    if (row.saved || row.touched) {
       this.refreshCache();
       try { await api.del(`/api/sets/${row.client_id}`); } catch (e) { toast(e.message, true); }
     }
@@ -205,9 +208,10 @@ class DayView {
 
   statusBadge() {
     const st = this.workout ? this.workout.status : null;
-    const logged = this.allSets().length;
+    const logged = this.doneSets().length;
     if (st === "done") return h("span", { class: "badge ok" }, "Done");
     if (st === "skipped") return h("span", { class: "badge danger" }, "Skipped");
+    if (this.template.kind === "lift") return this.workout && this.workout.started_at ? h("span", { class: "badge accent" }, "In progress") : h("span", { class: "badge" }, "Not started");
     if (logged || (this.workout && this.workout.time_sec)) return h("span", { class: "badge accent" }, "In progress");
     return h("span", { class: "badge" }, "Not started");
   }
@@ -226,17 +230,83 @@ class DayView {
     if (this.day.moved && this.templateKey === this.day.templateKey) head.appendChild(h("p", { class: "muted small" }, `The plan has ${templateFor(this.day.defaultTemplateKey).name} today. You moved it.`));
     for (const x of this.day.extras || []) if (this.templateKey === this.day.templateKey) head.appendChild(h("p", { class: "muted small" }, x));
     if (t.kind === "lift") {
+      const mode = this.mode();
       if (t.tips && t.tips.length) head.appendChild(h("p", { class: "tips" }, t.tips.join(" ")));
-      cards.push(head, ...this.liftCards());
-    } else if (t.kind === "run" || t.kind === "other") {
-      this.runBody(head);
-      cards.push(head);
-    } else {
-      this.restBody(head);
-      cards.push(head);
+      if (mode === "overview") {
+        head.appendChild(h("button", { class: "btn primary wide", style: { marginTop: ".9rem" }, onClick: () => this.startWorkout() }, "Start workout"));
+        cards.push(head, this.planCard(), this.actionsCard());
+      } else if (mode === "log") {
+        head.appendChild(h("div", { class: "timer-row", dataset: { timer: "1" } }));
+        cards.push(head, ...this.liftCards(), this.finishCard(), this.actionsCard());
+      } else {
+        cards.push(head, ...this.summaryCards(), this.actionsCard());
+      }
+      return cards;
     }
-    cards.push(this.finishCard());
-    cards.push(this.actionsCard());
+    if (t.kind === "run" || t.kind === "other") this.runBody(head); else this.restBody(head);
+    cards.push(head, this.finishCard(), this.actionsCard());
+    return cards;
+  }
+
+  // overview: nothing started yet. log: started, or a finished workout opened for edits. summary: finished.
+  mode() {
+    const w = this.workout;
+    if (w && w.status === "done") return this.editing ? "log" : "summary";
+    if (w && (w.started_at || (w.sets || []).length)) return "log";
+    return "overview";
+  }
+
+  async startWorkout() {
+    const r = await this.saveWorkout({ status: "in_progress", started_at: new Date().toISOString() });
+    if (!r.ok && !r.queued) return;
+    if (!this.workout) this.workout = { template_key: this.templateKey, status: "in_progress", sets: [] };
+    this.workout.started_at = this.workout.started_at || new Date().toISOString();
+    this.refreshCache();
+    toast("Workout started");
+    this.render();
+    window.scrollTo({ top: 0 });
+  }
+
+  // What the session holds, without any inputs.
+  planCard() {
+    const t = this.template;
+    const card = h("div", { class: "card" });
+    card.appendChild(h("div", { class: "card-title" }, h("h3", null, "Plan"), h("span", { class: "muted small" }, `${this.plan.length} lifts`)));
+    const list = h("div", null);
+    const row = (title, sub, extra) => list.appendChild(h("div", { class: "list-item" }, h("div", null, h("div", { class: "title" }, title), sub ? h("div", { class: "sub" }, sub) : null), extra ? h("span", { class: "muted small" }, extra) : null));
+    if (t.blocks.includes("warmup")) row(PROGRAM.warmup.title, `${PROGRAM.warmup.items.length} drills`, `${PROGRAM.warmup.minutes} min`);
+    if (t.blocks.includes("jumps")) row(`${PROGRAM.jumps.title}, phase ${this.day.phase}`, (PROGRAM.jumps.byPhase[this.day.phase] || []).map((j) => j.name).join(", "), `${PROGRAM.jumps.minutes} min`);
+    for (const e of this.plan) {
+      const ex = exerciseFor(e.key);
+      const last = this.data.last[e.key];
+      const target = e.sets ? `${e.sets} × ${e.reps}${e.sets !== e.plannedSets && e.plannedSets ? " (deload)" : ""}` : "";
+      row(ex.name, [target, last ? `last ${describeSets(ex, last.sets)}` : e.startKg ? `start around ${e.startKg} kg` : null].filter(Boolean).join(" · "));
+    }
+    if (t.blocks.includes("finisher") && t.finisher) row(t.finisher.title, t.finisher.text, `${t.finisher.minutes} min`);
+    card.appendChild(list);
+    return card;
+  }
+
+  // Finished workout: results per lift, duration, notes, and a way back in to fix mistakes.
+  summaryCards() {
+    const w = this.workout;
+    const cards = [];
+    const card = h("div", { class: "card" });
+    const dur = w.duration_min || minutesBetween(w.started_at, w.finished_at);
+    card.appendChild(h("div", { class: "card-title" }, h("h3", null, "Results"), h("span", { class: "muted small" }, [dur ? `${dur} min` : null, w.rpe ? `RPE ${w.rpe}` : null].filter(Boolean).join(" · "))));
+    const done = this.doneSets();
+    const list = h("div", null);
+    for (const e of this.plan) {
+      const ex = exerciseFor(e.key);
+      const sets = done.filter((s) => s.exercise_key === e.key).sort((a, b) => a.set_index - b.set_index);
+      list.appendChild(h("div", { class: "list-item" }, h("div", null, h("div", { class: "title" }, ex.name), h("div", { class: "sub" }, sets.length ? describeSets(ex, sets) : "not logged")), h("span", { class: `badge ${sets.length ? "ok" : ""}` }, `${sets.length}${e.sets ? `/${e.sets}` : ""}`)));
+    }
+    card.appendChild(list);
+    const blocks = ["warmup", "jumps", "finisher"].filter((b) => this.template.blocks.includes(b) && this.checklist[b]);
+    if (blocks.length) card.appendChild(h("p", { class: "muted small", style: { margin: ".8rem 0 0" } }, blocks.map((b) => `${b === "warmup" ? "Warm-up" : b === "jumps" ? "Jumps" : "Finisher"} ${Object.values(this.checklist[b]).filter(Boolean).length} ticked`).join(" · ")));
+    if (w.notes) card.appendChild(h("p", { style: { margin: ".8rem 0 0" } }, w.notes));
+    card.appendChild(h("button", { class: "btn tinted wide", style: { marginTop: "1rem" }, onClick: () => { this.editing = true; this.render(); } }, "Edit workout"));
+    cards.push(card);
     return cards;
   }
 
@@ -309,7 +379,7 @@ class DayView {
       h("button", { class: "btn text muted", onClick: async () => {
         const row = rows[rows.length - 1];
         if (!row) return;
-        if (row.saved && !confirm("Remove the last logged set?")) return;
+        if ((row.saved || row.touched) && !confirm("Remove the last logged set?")) return;
         await this.deleteSet(e.key, row);
         rowsEl.lastChild && rowsEl.removeChild(rowsEl.lastChild);
       } }, "Remove set")));
@@ -346,6 +416,14 @@ class DayView {
       rowEl.appendChild(h("div", { class: "cell" }, inp, h("span", { class: "unit" }, FIELD_META[f].label)));
     }
     tick.addEventListener("click", () => {
+      if (row.saved) {
+        // Untick: keep the numbers, mark the set as not done.
+        row.saved = false;
+        tick.classList.remove("done");
+        save.flush();
+        this.updateStatusBadge();
+        return;
+      }
       // Empty fields take the placeholder (last time or previous set), then the set is saved.
       for (const f of fields) {
         if (row[f] == null || row[f] === "") {
@@ -354,6 +432,7 @@ class DayView {
         }
       }
       if (!fields.some((f) => row[f] != null && row[f] !== "")) { toast("Type the numbers first"); return; }
+      row.saved = true;
       save.flush();
       tick.classList.add("done");
       // Update placeholders of the next row.
@@ -533,9 +612,10 @@ class DayView {
     const ta = h("textarea", { placeholder: "How it felt, knees, anything for later", value: (this.workout && this.workout.notes) || "" });
     ta.addEventListener("input", () => this.saveWorkoutDebounced({ notes: ta.value }));
     card.appendChild(h("label", { class: "field" }, h("span", null, "Notes"), ta));
-    if (st !== "done") card.appendChild(h("button", { class: "btn primary wide", onClick: () => this.finishDialog() }, this.template.kind === "rest" ? "Mark day done" : "Finish session"));
+    if (st !== "done") card.appendChild(h("button", { class: "btn primary wide", onClick: () => this.finishDialog() }, this.template.kind === "rest" ? "Mark day done" : this.template.kind === "lift" ? "Finish workout" : "Finish session"));
+    else if (this.template.kind === "lift") card.appendChild(h("button", { class: "btn primary wide", onClick: () => { this.editing = false; this.render(); window.scrollTo({ top: 0 }); } }, "Done editing"));
     else card.appendChild(h("button", { class: "btn wide", onClick: async () => { await this.saveWorkout({ status: "in_progress" }); this.render(); } }, "Reopen session"));
-    card.appendChild(h("div", { class: "timer", dataset: { timer: "1" }, style: { marginTop: ".6rem", textAlign: "center" } }));
+    if (this.template.kind !== "lift") card.appendChild(h("div", { class: "timer", dataset: { timer: "1" }, style: { marginTop: ".6rem", textAlign: "center" } }));
     return card;
   }
 
@@ -555,20 +635,26 @@ class DayView {
 
   finishDialog() {
     let rpe = this.workout && this.workout.rpe ? this.workout.rpe : null;
-    const sets = this.allSets();
+    const sets = this.doneSets();
     const volume = sets.reduce((s, x) => s + (x.weight_kg || 0) * (x.reps || 0), 0);
+    const elapsed = this.workout && this.workout.started_at && this.workout.status !== "done" ? minutesBetween(this.workout.started_at, new Date().toISOString()) : null;
     const rpeRow = h("div", { class: "rpe" });
     for (let i = 1; i <= 10; i++) rpeRow.appendChild(h("button", { class: rpe === i ? "active" : "", onClick: (ev) => { rpe = i; rpeRow.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === ev.currentTarget)); } }, String(i)));
     const content = h("div", null,
-      this.template.kind === "lift" ? h("p", { class: "muted" }, `${sets.length} sets logged${volume ? `, ${Math.round(volume)} kg total volume` : ""}.`) : null,
+      this.template.kind === "lift" ? h("p", { class: "muted" }, `${sets.length} sets logged${volume ? `, ${Math.round(volume)} kg total volume` : ""}${elapsed ? `, ${elapsed} min` : ""}.`) : null,
       h("div", { class: "field" }, h("span", null, "How hard was it? (1 easy, 10 all out)"), rpeRow));
     modal({
-      title: "Finish session", content,
+      title: this.template.kind === "lift" ? "Finish workout" : "Finish session", content,
       actions: [
         { label: "Cancel", class: "ghost" },
         { label: "Done", class: "primary", onClick: async () => {
           const patch = { status: "done" };
           if (rpe) patch.rpe = rpe;
+          if (this.workout && this.workout.started_at && this.workout.status !== "done") {
+            patch.finished_at = new Date().toISOString();
+            patch.duration_min = minutesBetween(this.workout.started_at, patch.finished_at);
+          }
+          this.editing = false;
           await this.saveWorkout(patch);
           if (this.template.timeTrial && this.workout && this.workout.time_sec && this.workout.distance_km >= 4.9 && this.workout.distance_km <= 5.3) {
             await queuedWrite("PUT", "/api/tests", { date: this.date, test_key: "five_k_sec", value: this.workout.time_sec }, `test:${this.date}:five_k_sec`);
@@ -640,11 +726,25 @@ class DayView {
     this.timer = setInterval(() => {
       const el = this.container.querySelector("[data-timer]");
       if (!el) return;
-      if (!this.lastTick) { el.textContent = ""; return; }
-      const s = Math.round((Date.now() - this.lastTick) / 1000);
-      el.textContent = `Rest since last set: ${secondsToHms(s)}`;
+      const parts = [];
+      const w = this.workout;
+      if (w && w.started_at && w.status !== "done") parts.push(`Workout ${secondsToHms(Math.max(0, (Date.now() - parseWhen(w.started_at)) / 1000))}`);
+      if (this.lastTick) parts.push(`Rest ${secondsToHms(Math.round((Date.now() - this.lastTick) / 1000))}`);
+      el.textContent = parts.join(" · ");
     }, 1000);
   }
+}
+
+function isDone(s) { return s.done == null ? true : Number(s.done) !== 0; }
+function parseWhen(v) {
+  if (!v) return NaN;
+  const d = new Date(/[TZ]/.test(v) ? v : v.replace(" ", "T") + "Z");
+  return d.getTime();
+}
+function minutesBetween(a, b) {
+  const x = parseWhen(a), y = parseWhen(b);
+  if (isNaN(x) || isNaN(y) || y < x) return null;
+  return Math.max(1, Math.round((y - x) / 60000));
 }
 
 function buildPlanFor(templateKey, week) {

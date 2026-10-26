@@ -1,0 +1,24 @@
+{
+  "name": "fitness-tracker",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "migrate:local": "wrangler d1 migrations apply fitness-tracker-db --local",
+    "migrate:remote": "wrangler d1 migrations apply fitness-tracker-db --remote",
+    "setup": "bash scripts/setup-cloudflare.sh"
+  },
+  "license": "MIT",
+  "private": "true",
+  "type": "module",
+  "devDependencies": {
+    "wrangler": "^4.152.0"
+  },
+  "dependencies": {
+    "@garmin/fitsdk": "^21.218.0",
+    "chart.js": "^4.6.1",
+    "fast-xml-parser": "^5.11.2",
+    "marked": "^18.1.1"
+  }
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Log in</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="login-body">
+<main class="login">
+  <h1>Training</h1>
+  <p class="muted">Enter the password to open the tracker.</p>
+  <form id="login-form" autocomplete="on">
+    <label class="field"><span>Password</span>
+      <input type="password" name="password" id="password" autocomplete="current-password" required autofocus>
+    </label>
+    <button type="submit" class="btn primary wide">Log in</button>
+    <p id="login-error" class="error" hidden></p>
+  </form>
+</main>
+<script src="/js/login.js"></script>
+</body>
+</html>

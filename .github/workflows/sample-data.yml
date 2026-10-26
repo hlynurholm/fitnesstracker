@@ -1,0 +1,30 @@
+# Loads six weeks of made-up training history into the live database, or removes it again.
+# Run it from the Actions tab (Run workflow) and pick "add" or "remove".
+# Needs the same two repository secrets as the deploy workflow.
+name: Sample data
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: add or remove the sample data
+        required: true
+        default: add
+        type: choice
+        options: [add, remove]
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Generate SQL
+        run: node scripts/sample-data.mjs "${{ inputs.action }}" > sample.sql && wc -l sample.sql
+      - name: Apply to D1
+        run: npx wrangler d1 execute fitness-tracker-db --remote --file sample.sql

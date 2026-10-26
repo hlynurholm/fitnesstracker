@@ -120,6 +120,10 @@ public/css/app.css      Styles, light and dark
 test/                   Unit tests, API smoke test, headless UI check, fixture generators
 ```
 
+## Sample data
+
+To see the app populated, run the "Sample data" workflow from the Actions tab with `add`. It loads six weeks of made-up history (lifts with sets, runs with Garmin-style activities, morning weights, nutrition days, week 1 tests, a report) dated before the real program start and moves the program start date back six weeks so they show as weeks 1 to 6. Run the same workflow with `remove` to delete every sample row and restore the start date. Locally: `node scripts/sample-data.mjs add > sample.sql && npx wrangler d1 execute fitness-tracker-db --local --file sample.sql`.
+
 ## Security notes
 
 - One password, compared in constant time, 8 failed attempts per 15 minutes per IP, signed HttpOnly cookie valid 180 days. Changing the password logs out every device.

@@ -306,6 +306,12 @@ function testsCard(d) {
   return c;
 }
 
+// Carries: heaviest load and the distance it was carried.
+function bestCarry(l) {
+  let top = null;
+  for (const s of l.sessions) for (const x of s.sets) if (x.weight_kg != null && (!top || x.weight_kg > top.weight_kg)) top = x;
+  return top ? `${top.weight_kg} kg × ${top.distance_m || "?"} m` : "–";
+}
 function bestsCard(m) {
   const c = card("Personal bests", "heaviest set and best estimated 1RM");
   const rows = m.lifts.filter((l) => l.sessions.some((s) => s.top != null)).map((l) => {
@@ -321,6 +327,6 @@ function bestsCard(m) {
   c.appendChild(h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", null, "Exercise"), h("th", { class: "num" }, "Heaviest set"), h("th", { class: "num" }, "Est. 1RM"), h("th", { class: "num" }, "Sessions"))),
     h("tbody", null,
       rows.map(({ l, bestTop, bestE }) => h("tr", null, h("td", null, l.ex.short || l.ex.name), h("td", { class: "num" }, bestTop ? `${fmtKg(bestTop.top)} kg × ${bestTop.topReps} (${fmtShort(bestTop.date)})` : ""), h("td", { class: "num" }, bestE ? `${bestE.e1rm.toFixed(1)} kg` : ""), h("td", { class: "num" }, String(l.count)))),
-      others.map((l) => { const best = l.ex.fields.includes("seconds") ? `${Math.max(...l.sessions.map((s) => s.bestSeconds))} s` : `${Math.max(...l.sessions.map((s) => s.bestReps))} reps`; return h("tr", null, h("td", null, l.ex.short || l.ex.name), h("td", { class: "num" }, best), h("td", { class: "num" }, ""), h("td", { class: "num" }, String(l.count))); })))));
+      others.map((l) => { const best = l.ex.fields.includes("seconds") ? `${Math.max(...l.sessions.map((s) => s.bestSeconds))} s` : l.ex.fields.includes("meters") ? bestCarry(l) : `${Math.max(...l.sessions.map((s) => s.bestReps))} reps`; return h("tr", null, h("td", null, l.ex.short || l.ex.name), h("td", { class: "num" }, best), h("td", { class: "num" }, ""), h("td", { class: "num" }, String(l.count))); })))));
   return c;
 }

@@ -89,6 +89,7 @@ export const PROGRAM = {
     db_single_leg_rdl: { name: "DB single leg RDL", fields: ["kg", "reps"], load: "dumbbell", increment: 2, group: "legs", perSide: true, e1rm: true, kgHint: "per hand" },
     pull_up: { name: "Pull-ups", fields: ["reps", "kg"], load: "bodyweight", increment: 2.5, group: "pull", kgHint: "added kg", kgOptional: true },
     copenhagen_plank: { name: "Copenhagen side plank", fields: ["seconds"], load: "bodyweight", group: "core", perSide: true },
+    suitcase_march: { name: "Suitcase march on the spot", short: "Suitcase march", fields: ["kg", "seconds"], load: "dumbbell", increment: 2, group: "core", perSide: true, kgHint: "one hand" },
     suitcase_carry: { name: "Suitcase carry", fields: ["kg", "meters"], load: "dumbbell", increment: 2, group: "core", perSide: true },
 
     deadlift: { name: "Deadlift (trap bar if available)", short: "Deadlift", fields: ["kg", "reps"], load: "barbell", increment: 5, group: "legs", e1rm: true },
@@ -136,7 +137,7 @@ export const PROGRAM = {
         { key: "db_single_leg_rdl", sets: 3, reps: "8 per leg", repsMin: 8, repsMax: 8, note: "Slow, hips square" },
         { key: "pull_up", sets: 4, reps: "as many as you can minus 1", amrap: true, note: "Add weight once you reach 10" },
         { key: "copenhagen_plank", sets: 3, reps: "20 s per side", seconds: 20, note: "Adductors, good for knees and cutting" },
-        { key: "suitcase_carry", sets: 3, reps: "30 m per side", meters: 30, note: "For the lower back" },
+        { key: "suitcase_march", sets: 3, reps: "40 s per side", seconds: 40, note: "For the lower back. Heavy DB in one hand, knees up slowly, don't lean" },
       ],
     },
     lift_b: {

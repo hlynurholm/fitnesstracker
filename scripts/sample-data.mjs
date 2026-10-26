@@ -58,6 +58,7 @@ const LOADS = {
   pull_up: { reps: [7, 7, 8, 8, 9, 9], bodyweight: true },
   copenhagen_plank: { seconds: 20 },
   suitcase_carry: { kg: 24, step: 2, meters: 30 },
+  suitcase_march: { kg: 24, step: 2, seconds: 40 },
   deadlift: { kg: 120, step: 5, reps: 4 },
   db_ohp: { kg: 18, step: 1, reps: 8 },
   db_reverse_lunge: { kg: 16, step: 1, reps: 8 },

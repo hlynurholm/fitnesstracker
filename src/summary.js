@@ -135,7 +135,7 @@ export async function buildSummaryMarkdown(env, settings, date) {
   const noted = workouts.filter((w) => w.notes).slice(-15);
   if (noted.length) {
     lines.push(`## Recent session notes`);
-    for (const w of noted) lines.push(`- ${w.date} ${templateFor(w.template_key).name}: ${w.notes.replace(/\s+/g, " ").slice(0, 300)}`);
+    for (const w of noted) lines.push(`- ${w.date} ${templateFor(w.template_key).name}: ${w.notes.replace(/\s+/g, " ").slice(0, 2000)}`);
     lines.push(``);
   }
   return lines.join("\n");

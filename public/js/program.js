@@ -104,6 +104,7 @@ export const PROGRAM = {
     lat_pulldown: { name: "Lat pulldown", fields: ["kg", "reps"], load: "machine", increment: 2.5, group: "pull", e1rm: true },
     hip_thrust: { name: "DB hip thrust or single leg hip thrust", short: "Hip thrust", fields: ["kg", "reps"], load: "dumbbell", increment: 2, group: "legs", e1rm: true },
     tib_calf: { name: "Tibialis raise + single leg calf raise", short: "Tib + calf raise", fields: ["reps", "kg"], load: "bodyweight", group: "legs", kgOptional: true, kgHint: "optional kg" },
+    ab_wheel: { name: "Ab wheel rollout", fields: ["reps"], load: "bodyweight", group: "core" },
     pallof_press: { name: "Pallof press", fields: ["kg", "reps"], load: "cable", increment: 2.5, group: "core", perSide: true },
 
     // Alternatives and extras that can be swapped in.
@@ -163,7 +164,7 @@ export const PROGRAM = {
         { key: "lat_pulldown", sets: 3, reps: "10 to 12", repsMin: 10, repsMax: 12 },
         { key: "hip_thrust", sets: 3, reps: "10", repsMin: 10, repsMax: 10 },
         { key: "tib_calf", sets: 2, reps: "15 each", repsMin: 15, repsMax: 15, note: "Ankles and knees for jumping" },
-        { key: "pallof_press", sets: 3, reps: "10 per side", repsMin: 10, repsMax: 10 },
+        { key: "ab_wheel", sets: 3, reps: "8 to 10", repsMin: 8, repsMax: 10, note: "From the knees. Stop before your lower back sags" },
       ],
       finisher: { title: "Conditioning finisher", text: "8 rounds of 20 s all out and 40 s easy on a bike or rower. Swap in kettlebell swings if those are free.", minutes: 8 },
     },

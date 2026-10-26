@@ -71,6 +71,7 @@ const LOADS = {
   hip_thrust: { kg: 30, step: 2, reps: 10 },
   tib_calf: { reps: 15, bodyweight: true },
   pallof_press: { kg: 15, step: 2.5, reps: 10 },
+  ab_wheel: { reps: [8, 8, 9, 9, 10, 10], bodyweight: true },
 };
 
 const WARMUP_IDS = PROGRAM.warmup.items.map((i) => i.id);

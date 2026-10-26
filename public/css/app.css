@@ -294,3 +294,12 @@ details[open] summary::after { transform: rotate(-90deg); }
 details summary .badge { margin-left: .4rem; }
 .timer-row { margin-top: .8rem; padding-top: .7rem; border-top: 1px solid var(--sep); font-variant-numeric: tabular-nums; font-weight: 600; color: var(--accent); min-height: 1.4em; }
 .timer-row:empty { display: none; }
+
+/* Diet tab */
+.warn { color: var(--warn); }
+.danger-text, td.danger, .value.danger, .small.danger { color: var(--danger); }
+.list-item .val { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; flex: 0 1 auto; max-width: 48%; }
+button.list-item { width: 100%; background: none; border: none; border-bottom: 1px solid var(--sep); font: inherit; text-align: left; padding: .75rem 0; color: inherit; }
+button.list-item:last-child { border-bottom: none; }
+tfoot td { font-weight: 600; border-top: 1px solid var(--sep); }
+@media (max-width: 420px) { .nav-item { font-size: .58rem; } .nav-icon { width: 24px; height: 24px; } }

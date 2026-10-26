@@ -7,6 +7,7 @@ import { renderHistory } from "./views/history.js";
 import { renderCalendar } from "./views/calendar.js";
 import { renderProgress } from "./views/progress.js";
 import { renderData } from "./views/data.js";
+import { renderDiet } from "./views/diet.js";
 import { renderSettings } from "./views/settings.js";
 
 export const state = { settings: store.get("ft_settings", {}), online: navigator.onLine };
@@ -31,6 +32,7 @@ const routes = [
   { re: /^\/calendar$/, name: "calendar", render: (c) => renderCalendar(c, {}) },
   { re: /^\/calendar\/(\d{4}-\d{2})$/, name: "calendar", render: (c, m) => renderCalendar(c, { month: m[1] }) },
   { re: /^\/progress$/, name: "progress", render: (c) => renderProgress(c) },
+  { re: /^\/diet$/, name: "diet", render: (c) => renderDiet(c) },
   { re: /^\/data$/, name: "data", render: (c) => renderData(c, {}) },
   { re: /^\/reports\/(\d+)$/, name: "data", render: (c, m) => renderData(c, { reportId: Number(m[1]) }) },
   { re: /^\/settings$/, name: "settings", render: (c) => renderSettings(c) },
@@ -50,7 +52,7 @@ async function render() {
   if (typeof cleanup === "function") { try { cleanup(); } catch {} }
   cleanup = null;
   clear(container);
-  container.className = "view" + (route.name === "progress" ? " wide" : "");
+  container.className = "view" + (route.name === "progress" || route.name === "diet" ? " wide" : "");
   container.appendChild(h("div", { class: "loading" }, "Loading"));
   try {
     await loadSettings();

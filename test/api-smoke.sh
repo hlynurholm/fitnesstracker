@@ -74,6 +74,10 @@ echo "--- summary preview ---"; echo "$out" | head -40; echo "--- end ---"
 # reports
 out=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -X POST -d '{"title":"Test report","body_md":"# Hello\n\nAll good."}' "$BASE/api/reports"); check "report created via token" '[[ "$out" == *"\"title\":\"Test report\""* ]]'
 out=$(j "$BASE/api/reports"); check "reports listed" '[[ "$out" == *"Test report"* ]]'
+out=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -X POST -d '{"title":"Diet note","body_md":"Protein is low on weekends.","section":"diet"}' "$BASE/api/reports"); check "diet report created with section" '[[ "$out" == *"\"section\":\"diet\""* ]]'
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -X POST -d '{"title":"x","body_md":"y","section":"nope"}' "$BASE/api/reports"); check "unknown report section rejected (400)" '[ "$code" = "400" ]'
+out=$(j "$BASE/api/reports?section=diet"); check "reports filter by section" '[[ "$out" == *"Diet note"* && "$out" != *"Test report"* ]]'
+out=$(j "$BASE/api/diet"); check "diet endpoint has targets and the latest diet note" '[[ "$out" == *"\"calories\":2450"* && "$out" == *"\"protein_g\":170"* && "$out" == *"Diet note"* && "$out" == *"day_template"* ]]'
 # history list
 out=$(j "$BASE/api/workouts"); check "workouts list has volume" '[[ "$out" == *"volume_kg"* ]]'
 # settings

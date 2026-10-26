@@ -15,6 +15,7 @@ export async function renderSettings(container) {
   const goal = h("input", { type: "number", step: "0.5", value: s.goal_weight_kg || PROGRAM.body.goalWeightKg });
   const kcal = h("input", { type: "number", step: "10", value: s.calorie_target || PROGRAM.nutrition.calories });
   const prot = h("input", { type: "number", step: "5", value: s.protein_target || PROGRAM.nutrition.proteinG });
+  const fun = h("input", { type: "number", step: "50", value: s.fun_budget_kcal || PROGRAM.nutrition.funBudgetWeekKcal });
   const maxHr = h("input", { type: "number", step: "1", value: s.max_hr || 190 });
   const fiveK = h("input", { type: "text", value: fmtTime(Number(s.five_k_target_sec) || PROGRAM.running.fiveKTargetSec) });
   form.appendChild(h("h3", null, "Plan"));
@@ -25,11 +26,12 @@ export async function renderSettings(container) {
     h("label", { class: "field" }, h("span", null, "Goal weight (kg)"), goal),
     h("label", { class: "field" }, h("span", null, "Calories per day"), kcal),
     h("label", { class: "field" }, h("span", null, "Protein per day (g)"), prot),
+    h("label", { class: "field" }, h("span", null, "Fun budget per week (kcal)"), fun),
     h("label", { class: "field" }, h("span", null, "Max heart rate (for zones)"), maxHr),
     h("label", { class: "field" }, h("span", null, "5 km target (mm:ss)"), fiveK)));
   form.appendChild(h("button", { class: "btn primary", onClick: async () => {
     try {
-      const body = { program_start_date: start.value, phase_override: phase.value || null, goal_weight_kg: goal.value, calorie_target: kcal.value, protein_target: prot.value, max_hr: maxHr.value, five_k_target_sec: parseTime(fiveK.value) };
+      const body = { program_start_date: start.value, phase_override: phase.value || null, goal_weight_kg: goal.value, calorie_target: kcal.value, protein_target: prot.value, fun_budget_kcal: fun.value, max_hr: maxHr.value, five_k_target_sec: parseTime(fiveK.value) };
       state.settings = await api.put("/api/settings", body);
       store.set("ft_settings", state.settings);
       toast("Settings saved");
@@ -47,7 +49,7 @@ export async function renderSettings(container) {
     h("p", { class: "small" }, "Two ways. Easiest: on the Data page, press \"Copy summary for Claude\" or download the JSON export and paste or upload it in the Claude project. Automatic: Claude can call the API directly with the API token (set with wrangler secret put API_TOKEN):"),
     h("pre", { class: "small", style: { overflowX: "auto", background: "var(--surface-2)", padding: ".6rem", borderRadius: "8px" } },
       `curl -H "Authorization: Bearer $API_TOKEN" ${location.origin}/api/export.json\ncurl -H "Authorization: Bearer $API_TOKEN" ${location.origin}/api/summary.md\ncurl -X POST -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" \\\n  -d '{"title":"Week 4 review","body_md":"# ..."}' ${location.origin}/api/reports`),
-    h("p", { class: "small muted" }, "Reports posted that way show up on the Data page.")));
+    h("p", { class: "small muted" }, "Reports posted that way show up on the Data page. Add \"section\": \"diet\" or \"training\" to the JSON and the latest one also shows on the Diet tab or the Today page. GET /api/diet returns targets, nutrition days, weigh-ins and weekly averages in one call.")));
 
   container.appendChild(h("div", { class: "card" },
     h("h3", null, "Account"),

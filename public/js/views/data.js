@@ -23,37 +23,10 @@ export async function renderData(container, { reportId }) {
   garminCard.appendChild(gBtn);
   container.appendChild(garminCard);
 
-  // MFP upload
-  const mfpCard = h("div", { class: "card" });
-  mfpCard.appendChild(h("div", { class: "card-title" }, h("h3", null, "MyFitnessPal"), h("span", { class: "muted small" }, "CSV export")));
-  mfpCard.appendChild(h("p", { class: "small muted" }, "In MyFitnessPal: Settings, Export Data (website or Premium app). Upload the Nutrition-Summary CSV; meals are summed per day. The Measurement-Summary CSV adds body weight."));
-  const mFile = h("input", { type: "file", multiple: true, accept: ".csv,text/csv" });
-  const mBtn = h("button", { class: "btn primary", onClick: () => doUpload(mFile, { source: "myfitnesspal" }, mBtn) }, "Upload");
-  mfpCard.appendChild(h("label", { class: "field" }, h("span", null, "Files"), mFile));
-  mfpCard.appendChild(mBtn);
-  container.appendChild(mfpCard);
+  // MFP upload (shared with the Diet tab)
+  container.appendChild(mfpUploadCard(() => renderData(container, {})));
 
-  async function doUpload(input, fields, btn) {
-    if (!input.files.length) { toast("Choose a file first", true); return; }
-    const fd = new FormData();
-    for (const f of input.files) fd.append("file", f);
-    for (const [k, v] of Object.entries(fields)) if (v) fd.append(k, v);
-    fd.append("tz_offset_min", String(new Date().getTimezoneOffset()));
-    btn.disabled = true;
-    try {
-      const r = await api.upload(fd);
-      const lines = r.uploads.map((u) => {
-        if (u.error && u.status === "failed") return `${u.filename}: stored, but could not be parsed (${u.error})`;
-        const parts = [];
-        if (u.activities.length) parts.push(`${u.activities.length} activit${u.activities.length === 1 ? "y" : "ies"}${u.activities[0].distance_m ? ` (${(u.activities[0].distance_m / 1000).toFixed(2)} km, ${fmtTime(u.activities[0].duration_s)})` : ""}`);
-        if (u.nutrition_days) parts.push(`${u.nutrition_days} nutrition days`);
-        if (u.body_metrics) parts.push(`${u.body_metrics} weigh-ins`);
-        if (!parts.length) parts.push(u.status === "parsed" ? "parsed" : "stored raw for later analysis");
-        return `${u.filename}: ${parts.join(", ")}`;
-      });
-      modal({ title: "Upload finished", content: h("ul", { class: "small" }, lines.map((l) => h("li", null, l))), actions: [{ label: "OK", class: "primary", onClick: () => renderData(container, {}) }] });
-    } catch (e) { toast(e.message, true); btn.disabled = false; }
-  }
+  const doUpload = (input, fields, btn) => uploadFiles(input, fields, btn, () => renderData(container, {}));
 
   // Export
   const exportCard = h("div", { class: "card" });
@@ -88,6 +61,40 @@ export async function renderData(container, { reportId }) {
         h("button", { class: "btn small ghost", onClick: () => uploadMenu(u, runs, container) }, "⋯"))));
   }
   container.appendChild(upCard);
+}
+
+// MyFitnessPal upload card. onDone re-renders the page that hosts it.
+export function mfpUploadCard(onDone) {
+  const mfpCard = h("div", { class: "card" });
+  mfpCard.appendChild(h("div", { class: "card-title" }, h("h3", null, "MyFitnessPal"), h("span", { class: "muted small" }, "CSV export")));
+  mfpCard.appendChild(h("p", { class: "small muted" }, "In MyFitnessPal: Settings, Export Data (website or Premium app). Upload the Nutrition-Summary CSV; meals are summed per day. The Measurement-Summary CSV adds body weight. Uploading the same days again replaces them."));
+  const mFile = h("input", { type: "file", multiple: true, accept: ".csv,text/csv" });
+  const mBtn = h("button", { class: "btn primary", onClick: () => uploadFiles(mFile, { source: "myfitnesspal" }, mBtn, onDone) }, "Upload");
+  mfpCard.appendChild(h("label", { class: "field" }, h("span", null, "Files"), mFile));
+  mfpCard.appendChild(mBtn);
+  return mfpCard;
+}
+
+export async function uploadFiles(input, fields, btn, onDone) {
+  if (!input.files.length) { toast("Choose a file first", true); return; }
+  const fd = new FormData();
+  for (const f of input.files) fd.append("file", f);
+  for (const [k, v] of Object.entries(fields)) if (v) fd.append(k, v);
+  fd.append("tz_offset_min", String(new Date().getTimezoneOffset()));
+  btn.disabled = true;
+  try {
+    const r = await api.upload(fd);
+    const lines = r.uploads.map((u) => {
+      if (u.error && u.status === "failed") return `${u.filename}: stored, but could not be parsed (${u.error})`;
+      const parts = [];
+      if (u.activities.length) parts.push(`${u.activities.length} activit${u.activities.length === 1 ? "y" : "ies"}${u.activities[0].distance_m ? ` (${(u.activities[0].distance_m / 1000).toFixed(2)} km, ${fmtTime(u.activities[0].duration_s)})` : ""}`);
+      if (u.nutrition_days) parts.push(`${u.nutrition_days} nutrition days`);
+      if (u.body_metrics) parts.push(`${u.body_metrics} weigh-ins`);
+      if (!parts.length) parts.push(u.status === "parsed" ? "parsed" : "stored raw for later analysis");
+      return `${u.filename}: ${parts.join(", ")}`;
+    });
+    modal({ title: "Upload finished", content: h("ul", { class: "small" }, lines.map((l) => h("li", null, l))), actions: [{ label: "OK", class: "primary", onClick: onDone }] });
+  } catch (e) { toast(e.message, true); btn.disabled = false; }
 }
 
 function uploadMenu(u, runs, container) {

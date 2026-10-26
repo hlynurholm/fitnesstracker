@@ -120,6 +120,24 @@ public/css/app.css      Styles, light and dark
 test/                   Unit tests, API smoke test, headless UI check, fixture generators
 ```
 
+## Diet tab
+
+The Diet tab shows the targets (calories, protein, weekly fun budget, expected weight loss), the MyFitnessPal intake per day against the targets, weekly averages next to the weekly weight change, an implied maintenance estimate once there are about three weeks of both, the day template from the plan, the latest diet note from Claude, and the MyFitnessPal upload.
+
+### For a future analysis task
+
+The data model is ready for a scheduled Claude task that reads the data and writes suggestions back into the app:
+
+| Call | Purpose |
+| --- | --- |
+| `GET /api/diet?days=120` | Targets, nutrition days with meals, weigh-ins, weekly averages and the latest diet report in one JSON document. |
+| `GET /api/export.json` | Everything, including sets, runs and parsed Garmin activities. |
+| `GET /api/summary.md` | The same as compact Markdown. |
+| `POST /api/reports` with `{"title","body_md","section":"diet"}` | Posts a note. `section` is `general`, `diet` or `training`. The latest `diet` note shows on the Diet tab. |
+| `GET /api/reports?section=diet&limit=1&full=1` | Reads the latest note back. |
+
+All calls take `Authorization: Bearer <API_TOKEN>`.
+
 ## Sample data
 
 To see the app populated, run the "Sample data" workflow from the Actions tab with `add`. It loads six weeks of made-up history (lifts with sets, runs with Garmin-style activities, morning weights, nutrition days, week 1 tests, a report) dated before the real program start and moves the program start date back six weeks so they show as weeks 1 to 6. Run the same workflow with `remove` to delete every sample row and restore the start date. Locally: `node scripts/sample-data.mjs add > sample.sql && npx wrangler d1 execute fitness-tracker-db --local --file sample.sql`.

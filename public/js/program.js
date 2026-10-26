@@ -6,7 +6,18 @@ export const PROGRAM = {
   startDateDefault: "2026-10-26", // Monday of week 1
   plannedWeeks: 16,
   body: { startWeightKg: 93, goalWeightKg: 85, heightCm: 188 },
-  nutrition: { calories: 2450, proteinG: 170, funBudgetWeekKcal: 2500, maintenanceEstimate: 3000 },
+  nutrition: {
+    calories: 2450, proteinG: 170, funBudgetWeekKcal: 2500, maintenanceEstimate: 3000, lossPerWeekKg: [0.4, 0.6],
+    note: "Maintenance is a formula estimate; the scale gives the real number after 3 weeks. If the weekly average does not move for 2 weeks, cut 200 kcal a day, starting with the fun budget or bread.",
+    // A day that lands on the targets. The fun budget (about 350 kcal a day) sits inside the 2,450.
+    dayTemplate: [
+      { when: "Lunch", what: "Big protein portion (chicken, fish, eggs, mince) + carbs + veg", kcal: 700, protein: 50 },
+      { when: "Afternoon", what: "500 g skyr or Greek yogurt + fruit, or a shake + a sandwich with chicken or tuna", kcal: 450, protein: 45 },
+      { when: "Dinner", what: "Your usual dinners with a slightly bigger protein portion", kcal: 800, protein: 50 },
+      { when: "Evening", what: "Fun budget (daily average)", kcal: 350, protein: 0 },
+      { when: "Anywhere", what: "Fruit, milk, a bit of bread", kcal: 150, protein: 25 },
+    ],
+  },
   running: { fiveKTargetSec: 23 * 60, fiveKPbSec: 25 * 60 + 37, fiveKStretchSec: 22 * 60 },
   stepsNote: "8,000 to 10,000 steps every day. Pram walks count.",
   deloadEveryWeeks: 6,

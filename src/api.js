@@ -14,6 +14,7 @@ function json(data, status = 200, headers = {}) {
 }
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 function bad(msg) { throw new HttpError(400, msg); }
+const REPORT_SECTIONS = new Set(["general", "diet", "training"]);
 function assertDate(d) { if (!DATE_RE.test(d || "")) bad("Bad date, expected YYYY-MM-DD"); return d; }
 async function readJson(request) { try { return (await request.json()) || {}; } catch { bad("Invalid JSON body"); } }
 function placeholders(n) { return Array(n).fill("?").join(","); }
@@ -230,11 +231,21 @@ async function route(method, p, request, env, url, settings) {
   }
 
   if (a === "reports") {
-    if (!b && method === "GET") { const { results } = await env.DB.prepare("SELECT id, title, date, author, created_at, substr(body_md, 1, 240) AS preview FROM reports ORDER BY COALESCE(date, created_at) DESC, id DESC").all(); return results; }
+    // ?section=diet|training|general narrows the list; ?limit=n caps it; ?full=1 includes the Markdown body.
+    if (!b && method === "GET") {
+      const section = url.searchParams.get("section");
+      if (section && !REPORT_SECTIONS.has(section)) bad("Unknown section");
+      const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit")) || 200));
+      const cols = url.searchParams.get("full") === "1" ? "*" : "id, title, date, author, section, created_at, substr(body_md, 1, 240) AS preview";
+      const { results } = await env.DB.prepare(`SELECT ${cols} FROM reports ${section ? "WHERE section = ?" : ""} ORDER BY COALESCE(date, created_at) DESC, id DESC LIMIT ?`).bind(...(section ? [section] : []), limit).all();
+      return results;
+    }
     if (!b && method === "POST") {
       const body = await readJson(request);
       if (!body.title || !body.body_md) bad("title and body_md are required");
-      const res = await env.DB.prepare("INSERT INTO reports (title, date, body_md, author) VALUES (?, ?, ?, ?)").bind(String(body.title).slice(0, 200), body.date || todayLocal(), String(body.body_md), body.author || "claude").run();
+      const section = body.section || "general";
+      if (!REPORT_SECTIONS.has(section)) bad("section must be one of " + [...REPORT_SECTIONS].join(", "));
+      const res = await env.DB.prepare("INSERT INTO reports (title, date, body_md, author, section) VALUES (?, ?, ?, ?, ?)").bind(String(body.title).slice(0, 200), body.date || todayLocal(), String(body.body_md), body.author || "claude", section).run();
       return env.DB.prepare("SELECT * FROM reports WHERE id = ?").bind(res.meta.last_row_id).first();
     }
     if (b && method === "GET") { const row = await env.DB.prepare("SELECT * FROM reports WHERE id = ?").bind(Number(b)).first(); if (!row) throw new HttpError(404, "Not found"); return row; }
@@ -242,6 +253,7 @@ async function route(method, p, request, env, url, settings) {
   }
 
   if (a === "dashboard" && method === "GET") return getDashboard(env, settings, url.searchParams.get("date") || todayLocal());
+  if (a === "diet" && method === "GET") return getDiet(env, settings, url.searchParams.get("date") || todayLocal(), Number(url.searchParams.get("days")) || 120);
   if (a === "export.json" && method === "GET") return exportAll(env, settings, url.searchParams.get("include") === "raw");
   if (a === "summary.md" && method === "GET") {
     const md = await buildSummaryMarkdown(env, settings, url.searchParams.get("date") || todayLocal());
@@ -542,6 +554,47 @@ async function getDashboard(env, settings, date) {
     nutrition: nutrition.results,
     uploads: uploads.results,
     reports: reports.results,
+  };
+}
+
+// Everything the Diet tab needs, and a compact feed for a future analysis task: targets, the last N days of
+// nutrition with meals, weigh-ins over the same span, weekly averages and the latest diet report.
+async function getDiet(env, settings, date, days) {
+  const from = addDays(date, -Math.min(730, Math.max(7, days)));
+  const [nutrition, body, report] = await Promise.all([
+    env.DB.prepare("SELECT * FROM nutrition_days WHERE date >= ? ORDER BY date").bind(from).all(),
+    env.DB.prepare("SELECT id, date, weight_kg, source FROM body_metrics WHERE date >= ? AND weight_kg IS NOT NULL ORDER BY date").bind(from).all(),
+    env.DB.prepare("SELECT * FROM reports WHERE section = 'diet' ORDER BY COALESCE(date, created_at) DESC, id DESC LIMIT 1").first(),
+  ]);
+  const targets = {
+    calories: Number(settings.calorie_target) || PROGRAM.nutrition.calories,
+    protein_g: Number(settings.protein_target) || PROGRAM.nutrition.proteinG,
+    fun_budget_week_kcal: Number(settings.fun_budget_kcal) || PROGRAM.nutrition.funBudgetWeekKcal,
+    maintenance_estimate: PROGRAM.nutrition.maintenanceEstimate,
+    goal_weight_kg: Number(settings.goal_weight_kg) || PROGRAM.body.goalWeightKg,
+    loss_per_week_kg: PROGRAM.nutrition.lossPerWeekKg,
+  };
+  const start = settings.program_start_date;
+  const weeks = new Map();
+  const weekOf = (d) => { const wk = weekNumber(d, start); return wk >= 1 ? wk : 0; };
+  for (const n of nutrition.results) { const k = weekOf(n.date); if (!weeks.has(k)) weeks.set(k, { week: k, monday: addDays(mondayOf(start), (k - 1) * 7), nutrition: [], weights: [] }); weeks.get(k).nutrition.push(n); }
+  for (const b of body.results) { const k = weekOf(b.date); if (!weeks.has(k)) weeks.set(k, { week: k, monday: addDays(mondayOf(start), (k - 1) * 7), nutrition: [], weights: [] }); weeks.get(k).weights.push(b.weight_kg); }
+  const avg = (arr) => (arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : null);
+  const r0 = (x) => (x == null ? null : Math.round(x));
+  const weekRows = [...weeks.values()].sort((a, b) => a.week - b.week).map((w) => ({
+    week: w.week, monday: w.monday, days_logged: w.nutrition.length,
+    kcal_avg: r0(avg(w.nutrition.map((n) => n.calories))), protein_avg: r0(avg(w.nutrition.map((n) => n.protein_g))),
+    carbs_avg: r0(avg(w.nutrition.map((n) => n.carbs_g))), fat_avg: r0(avg(w.nutrition.map((n) => n.fat_g))), sugar_avg: r0(avg(w.nutrition.map((n) => n.sugar_g))),
+    weight_avg: avg(w.weights) == null ? null : Math.round(avg(w.weights) * 10) / 10, weigh_ins: w.weights.length,
+  }));
+  for (let i = 1; i < weekRows.length; i++) if (weekRows[i].weight_avg != null && weekRows[i - 1].weight_avg != null) weekRows[i].weight_change = Math.round((weekRows[i].weight_avg - weekRows[i - 1].weight_avg) * 10) / 10;
+  return {
+    generated_at: new Date().toISOString(), date, from, targets,
+    day_template: PROGRAM.nutrition.dayTemplate,
+    nutrition: nutrition.results.map((r) => rowWithJson(r, ["meals_json"])),
+    body: body.results,
+    weeks: weekRows,
+    report: report || null,
   };
 }
 

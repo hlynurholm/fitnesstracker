@@ -121,6 +121,7 @@ if (!/Lift A/.test(monLabel)) errors.push("calendar swap back failed: " + monLab
 await p.goto(base + "/history"); await p.waitForSelector(".list-item"); await p.screenshot({ path: `${out}/phone-history.png`, fullPage: true });
 await p.goto(base + "/progress"); await p.waitForSelector(".tiles"); await p.waitForTimeout(800); await p.screenshot({ path: `${out}/phone-progress.png`, fullPage: true });
 await p.goto(base + "/data"); await p.waitForSelector(".card"); await p.screenshot({ path: `${out}/phone-data.png`, fullPage: true });
+await p.goto(base + "/diet"); await p.waitForSelector(".tiles"); await p.waitForTimeout(800); await p.screenshot({ path: `${out}/phone-diet.png`, fullPage: true });
 await p.goto(base + "/settings"); await p.waitForSelector(".card"); await p.screenshot({ path: `${out}/phone-settings.png`, fullPage: true });
 await phone.close();
 
@@ -135,6 +136,7 @@ await d.goto(base + "/calendar"); await d.waitForSelector(".cal-cell"); await d.
 await d.goto(base + "/progress"); await d.waitForSelector(".tiles"); await d.waitForTimeout(1000);
 await d.screenshot({ path: `${out}/desktop-progress.png`, fullPage: true });
 await d.goto(base + "/data"); await d.waitForSelector(".card"); await d.screenshot({ path: `${out}/desktop-data.png`, fullPage: true });
+await d.goto(base + "/diet"); await d.waitForSelector(".tiles"); await d.waitForTimeout(1000); await d.screenshot({ path: `${out}/desktop-diet.png`, fullPage: true });
 await desk.close();
 await browser.close();
 

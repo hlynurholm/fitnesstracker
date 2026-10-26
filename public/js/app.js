@@ -4,6 +4,7 @@ import { h, clear, store, toast } from "./util.js";
 import { todayLocal } from "./program.js";
 import { renderToday } from "./views/today.js";
 import { renderHistory } from "./views/history.js";
+import { renderCalendar } from "./views/calendar.js";
 import { renderProgress } from "./views/progress.js";
 import { renderData } from "./views/data.js";
 import { renderSettings } from "./views/settings.js";
@@ -26,7 +27,9 @@ export async function loadSettings(force = false) {
 const routes = [
   { re: /^\/$/, name: "today", render: (c) => renderToday(c, { date: todayLocal() }) },
   { re: /^\/day\/(\d{4}-\d{2}-\d{2})$/, name: "today", render: (c, m) => renderToday(c, { date: m[1] }) },
-  { re: /^\/history$/, name: "history", render: (c) => renderHistory(c) },
+  { re: /^\/history$/, name: "calendar", render: (c) => renderHistory(c) },
+  { re: /^\/calendar$/, name: "calendar", render: (c) => renderCalendar(c, {}) },
+  { re: /^\/calendar\/(\d{4}-\d{2})$/, name: "calendar", render: (c, m) => renderCalendar(c, { month: m[1] }) },
   { re: /^\/progress$/, name: "progress", render: (c) => renderProgress(c) },
   { re: /^\/data$/, name: "data", render: (c) => renderData(c, {}) },
   { re: /^\/reports\/(\d+)$/, name: "data", render: (c, m) => renderData(c, { reportId: Number(m[1]) }) },
@@ -47,7 +50,7 @@ async function render() {
   if (typeof cleanup === "function") { try { cleanup(); } catch {} }
   cleanup = null;
   clear(container);
-  container.className = "view" + (route.name === "progress" || route.name === "history" ? " wide" : "");
+  container.className = "view" + (route.name === "progress" ? " wide" : "");
   container.appendChild(h("div", { class: "loading" }, "Loading"));
   try {
     await loadSettings();

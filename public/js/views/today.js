@@ -1,8 +1,9 @@
 // Today / day view: the logging screen.
 import { api, queuedWrite } from "../api.js";
 import { h, clear, toast, modal, fmtDay, fmtShort, uuid, debounce, store, secondsToHms, fmtKg } from "../util.js";
-import { PROGRAM, resolveDay, templateFor, exerciseFor, addDays, todayLocal, e1rm, fmtTime, parseTime, fmtPace, WEEKDAYS } from "../program.js";
+import { PROGRAM, templateFor, exerciseFor, addDays, mondayOf, todayLocal, e1rm, fmtTime, parseTime, fmtPace, WEEKDAYS } from "../program.js";
 import { state } from "../app.js";
+import { PICKABLE } from "./calendar.js";
 
 const FIELD_META = {
   kg: { label: "kg", attrs: { type: "number", inputmode: "decimal", step: "0.5", min: "0" } },
@@ -124,6 +125,16 @@ class DayView {
     }
   }
 
+  // Re-fetch the day from the server and draw it again (after schedule changes or uploads).
+  async reload() {
+    try {
+      const fresh = await api.get(`/api/day/${this.date}`);
+      store.set(`ft_day_${this.date}`, fresh);
+      this.destroy();
+      new DayView(this.container, this.date, fresh, false).render();
+    } catch (e) { toast(e.message, true); }
+  }
+
   // ---------- rendering ----------
   render() {
     const c = this.container;
@@ -132,18 +143,20 @@ class DayView {
     const isToday = this.date === this.today;
     if (this.offline) c.appendChild(h("div", { class: "banner" }, "Offline: showing the last saved copy of this day. New entries are saved on the phone and synced later."));
 
-    c.appendChild(h("div", { class: "day-nav" },
-      h("a", { class: "btn icon", href: `/day/${addDays(this.date, -1)}`, "aria-label": "Previous day" }, "‹"),
-      h("div", { class: "grow", style: { textAlign: "center" } },
+    c.appendChild(h("div", { class: "page-head" },
+      h("div", null,
         h("h1", null, isToday ? "Today" : fmtDay(this.date)),
-        h("div", { class: "muted small" }, isToday ? fmtDay(this.date, true) : h("a", { href: "/" }, "Back to today"))),
-      h("a", { class: "btn icon", href: `/day/${addDays(this.date, 1)}`, "aria-label": "Next day" }, "›")));
+        h("div", { class: "sub" }, isToday ? fmtDay(this.date, true) : h("a", { href: "/" }, "Back to today"))),
+      h("div", { class: "controls" },
+        h("a", { class: "btn icon", href: `/day/${addDays(this.date, -1)}`, "aria-label": "Previous day" }, "‹"),
+        h("a", { class: "btn icon", href: `/day/${addDays(this.date, 1)}`, "aria-label": "Next day" }, "›"))));
 
     const meta = h("div", { class: "day-meta" });
     if (day.week >= 1) meta.appendChild(h("span", { class: "badge accent" }, `Week ${day.week}`));
     meta.appendChild(h("span", { class: "badge" }, `Phase ${day.phase}: ${day.phaseName}`));
     if (day.deload) meta.appendChild(h("span", { class: "badge warn" }, "Deload week"));
     if (day.testWeek) meta.appendChild(h("span", { class: "badge warn" }, "Test week"));
+    if (day.moved) meta.appendChild(h("span", { class: "badge accent" }, "Moved from the plan"));
     if (day.beyondPlan) meta.appendChild(h("span", { class: "badge" }, "Beyond the 16 planned weeks"));
     c.appendChild(meta);
     if (day.beforeStart) c.appendChild(h("div", { class: "banner info" }, `The plan starts Monday ${fmtShort(day.startDate)}. This shows the normal session for a ${day.weekdayName}.`));
@@ -151,7 +164,7 @@ class DayView {
 
     c.appendChild(this.weekStrip());
     c.appendChild(this.bodyWeightCard());
-    c.appendChild(this.sessionCard());
+    for (const card of this.sessionCards()) c.appendChild(card);
 
     const others = this.data.workouts.filter((w) => w.template_key !== this.templateKey);
     if (others.length) {
@@ -166,27 +179,27 @@ class DayView {
 
   weekStrip() {
     const strip = h("div", { class: "week-strip" });
-    for (const d of this.data.week) {
+    this.data.week.forEach((d, i) => {
       const w = d.workouts.find((x) => x.template_key === d.templateKey) || d.workouts.find((x) => x.status !== "skipped") || d.workouts[0];
-      const cls = ["week-day", d.kind, w ? w.status : "", d.date === this.today ? "today" : ""].join(" ");
-      strip.appendChild(h("a", { class: cls, href: `/day/${d.date}`, title: d.name },
-        WEEKDAYS[new Date(d.date + "T00:00:00Z").getUTCDay() === 0 ? 6 : new Date(d.date + "T00:00:00Z").getUTCDay() - 1],
+      const cls = ["week-day", d.kind, w ? w.status : "", d.date === this.today ? "today" : "", d.date === this.date ? "selected" : "", d.moved ? "moved" : ""].join(" ");
+      strip.appendChild(h("a", { class: cls, href: `/day/${d.date}`, title: d.name, "aria-current": d.date === this.date ? "date" : null },
+        WEEKDAYS[i].slice(0, 3),
         h("b", null, String(Number(d.date.slice(8)))),
         h("span", { class: "dot" })));
-    }
+    });
     return strip;
   }
 
   bodyWeightCard() {
-    const input = h("input", { type: "number", inputmode: "decimal", step: "0.1", min: "30", max: "300", placeholder: "kg", value: this.data.body && this.data.body.weight_kg != null ? this.data.body.weight_kg : "", style: { maxWidth: "110px", textAlign: "center" } });
+    const input = h("input", { type: "number", inputmode: "decimal", step: "0.1", min: "30", max: "300", placeholder: "kg", value: this.data.body && this.data.body.weight_kg != null ? this.data.body.weight_kg : "", style: { maxWidth: "104px", textAlign: "center" } });
     const save = async () => {
       const v = input.value === "" ? null : Number(input.value);
       const r = await queuedWrite("PUT", "/api/body", { date: this.date, weight_kg: v }, `body:${this.date}`);
       if (r.ok) { toast(v == null ? "Weigh-in removed" : "Weight saved"); this.data.body = v == null ? null : { date: this.date, weight_kg: v }; store.set(`ft_day_${this.date}`, this.data); }
     };
     input.addEventListener("change", save);
-    return h("div", { class: "card row between" },
-      h("div", null, h("div", { style: { fontWeight: 600 } }, "Morning weight"), h("div", { class: "muted small" }, "3 mornings a week is enough. Weekly average is what counts.")),
+    return h("div", { class: "card row between", style: { flexWrap: "nowrap" } },
+      h("div", null, h("div", { style: { fontWeight: 600 } }, "Morning weight"), h("div", { class: "muted small" }, "Three mornings a week is enough.")),
       input);
   }
 
@@ -200,50 +213,59 @@ class DayView {
   }
   updateStatusBadge() { const el = this.container.querySelector("[data-status]"); if (el) { clear(el); el.appendChild(this.statusBadge()); } }
 
-  sessionCard() {
+  sessionCards() {
     const t = this.template;
-    const card = h("div", { class: "card accent" });
-    card.appendChild(h("div", { class: "card-title" },
-      h("div", null, h("h2", { class: `kind-${t.kind}` }, t.name), h("div", { class: "muted small" }, [t.subtitle, t.duration].filter(Boolean).join(" · "))),
+    const cards = [];
+    const head = h("div", { class: "card session-card" });
+    head.appendChild(h("div", { class: "card-title" },
+      h("div", null,
+        h("div", { class: `kind-label kind-${t.kind}` }, [t.kind === "rest" ? "Rest" : t.kind === "other" ? "Other" : t.kind, t.duration].filter(Boolean).join(" · ")),
+        h("h2", { style: { margin: 0 } }, t.name),
+        t.subtitle ? h("div", { class: "muted small" }, t.subtitle) : null),
       h("div", { dataset: { status: "1" } }, this.statusBadge())));
-    for (const x of this.day.extras || []) if (this.templateKey === this.day.templateKey) card.appendChild(h("div", { class: "muted small" }, x));
-    if (t.kind === "lift") this.liftBody(card);
-    else if (t.kind === "run") this.runBody(card);
-    else if (t.kind === "other") this.runBody(card);
-    else this.restBody(card);
-    card.appendChild(this.notesField());
-    card.appendChild(this.actions());
-    return card;
+    if (this.day.moved && this.templateKey === this.day.templateKey) head.appendChild(h("p", { class: "muted small" }, `The plan has ${templateFor(this.day.defaultTemplateKey).name} today. You moved it.`));
+    for (const x of this.day.extras || []) if (this.templateKey === this.day.templateKey) head.appendChild(h("p", { class: "muted small" }, x));
+    if (t.kind === "lift") {
+      if (t.tips && t.tips.length) head.appendChild(h("p", { class: "tips" }, t.tips.join(" ")));
+      cards.push(head, ...this.liftCards());
+    } else if (t.kind === "run" || t.kind === "other") {
+      this.runBody(head);
+      cards.push(head);
+    } else {
+      this.restBody(head);
+      cards.push(head);
+    }
+    cards.push(this.finishCard());
+    cards.push(this.actionsCard());
+    return cards;
   }
 
   // ----- lift -----
-  liftBody(card) {
+  liftCards() {
     const t = this.template;
-    if (t.tips && t.tips.length) card.appendChild(h("p", { class: "muted small" }, t.tips.join(" ")));
-    if (t.blocks.includes("warmup")) card.appendChild(this.checklistBlock("warmup", `${PROGRAM.warmup.title} (${PROGRAM.warmup.minutes} min)`, PROGRAM.warmup.items, PROGRAM.warmup.note));
+    const cards = [];
+    if (t.blocks.includes("warmup")) cards.push(h("div", { class: "card" }, this.checklistBlock("warmup", `${PROGRAM.warmup.title} (${PROGRAM.warmup.minutes} min)`, PROGRAM.warmup.items, PROGRAM.warmup.note)));
     if (t.blocks.includes("jumps")) {
       const items = (PROGRAM.jumps.byPhase[this.day.phase] || []).map((j) => ({ id: j.id, text: `${j.name}: ${j.sets}`, sub: j.note }));
-      card.appendChild(this.checklistBlock("jumps", `${PROGRAM.jumps.title}, phase ${this.day.phase} (${PROGRAM.jumps.minutes} min)`, items, `${PROGRAM.jumps.note} ${PROGRAM.jumps.phaseNotes[this.day.phase] || ""}`));
+      cards.push(h("div", { class: "card" }, this.checklistBlock("jumps", `${PROGRAM.jumps.title}, phase ${this.day.phase} (${PROGRAM.jumps.minutes} min)`, items, `${PROGRAM.jumps.note} ${PROGRAM.jumps.phaseNotes[this.day.phase] || ""}`)));
     }
-    card.appendChild(h("div", { class: "section-title" }, "Lifts"));
-    const list = h("div", { dataset: { exercises: "1" } });
-    for (const e of this.plan) list.appendChild(this.exerciseBlock(e));
-    card.appendChild(list);
-    card.appendChild(h("div", { class: "row", style: { marginTop: ".6rem" } },
-      h("button", { class: "btn small", onClick: () => this.addExerciseDialog() }, "+ Add exercise")));
+    cards.push(h("div", { class: "section-title" }, "Lifts"));
+    for (const e of this.plan) cards.push(this.exerciseBlock(e));
+    cards.push(h("button", { class: "btn tinted wide add-exercise", onClick: () => this.addExerciseDialog() }, "+ Add an exercise"));
     if (t.blocks.includes("finisher") && t.finisher) {
-      card.appendChild(this.checklistBlock("finisher", t.finisher.title, [{ id: "done", text: t.finisher.text }], null, true));
+      cards.push(h("div", { class: "card" }, this.checklistBlock("finisher", t.finisher.title, [{ id: "done", text: t.finisher.text }], null, true)));
     }
-    card.appendChild(h("p", { class: "muted small", style: { marginTop: ".8rem" } }, "Progression: once you hit the top of the rep range on every set with 1 to 2 reps left, add weight next time (2.5 kg for barbell, one dumbbell step). Bad week? Minimum version: Lift A, Lift B and one interval session at about 45 min each. Keep the jumps, cut the accessories."));
+    cards.push(h("p", { class: "muted small", style: { margin: "1rem .25rem 0" } }, "Progression: once you hit the top of the rep range on every set with 1 to 2 reps left, add weight next time (2.5 kg for barbell, one dumbbell step). Bad week? Minimum version: Lift A, Lift B and one interval session at about 45 min each. Keep the jumps, cut the accessories."));
+    return cards;
   }
 
   checklistBlock(blockId, title, items, note, open = false) {
     const ticked = this.checklist[blockId] || {};
     const total = items.length, doneCount = items.filter((i) => ticked[i.id]).length;
     const det = h("details", { open: open || (doneCount > 0 && doneCount < total) });
-    const sum = h("summary", null, h("span", null, title, " ", h("span", { class: `badge ${doneCount === total ? "ok" : ""}` }, `${doneCount}/${total}`)));
+    const sum = h("summary", null, h("span", null, title, h("span", { class: `badge ${doneCount === total ? "ok" : ""}` }, `${doneCount}/${total}`)));
     det.appendChild(sum);
-    if (note) det.appendChild(h("p", { class: "muted small" }, note));
+    if (note) det.appendChild(h("p", { class: "muted small", style: { marginTop: ".5rem" } }, note));
     for (const it of items) {
       const cb = h("input", { type: "checkbox", checked: !!ticked[it.id] });
       const label = h("label", { class: "check" + (ticked[it.id] ? " done" : "") }, cb, h("span", null, h("span", { class: "text" }, it.text), it.sub ? h("div", { class: "sub" }, it.sub) : null));
@@ -264,27 +286,27 @@ class DayView {
     const ex = exerciseFor(e.key);
     const rows = this.rows[e.key] || (this.rows[e.key] = []);
     const last = this.data.last[e.key];
-    const block = h("div", { class: "exercise", dataset: { key: e.key } });
+    const block = h("div", { class: "card exercise", dataset: { key: e.key } });
     const target = e.sets ? `${e.sets} × ${e.reps}${e.sets !== e.plannedSets && e.plannedSets ? ` (deload, normally ${e.plannedSets})` : ""}` : "";
     const head = h("div", { class: "ex-head" },
       h("div", null,
         h("div", { class: "ex-name" }, ex.name),
         h("div", { class: "ex-target" }, [target, e.note, ex.kgHint ? `kg = ${ex.kgHint}` : null].filter(Boolean).join(" · "))),
-      h("button", { class: "btn small ghost", "aria-label": "Exercise options", onClick: () => this.exerciseMenu(e) }, "⋯"));
+      h("button", { class: "btn more", "aria-label": "Exercise options", onClick: () => this.exerciseMenu(e) }, "···"));
     block.appendChild(head);
-    if (last) block.appendChild(h("div", { class: "ex-last" }, `Last (${fmtShort(last.date)}): ${describeSets(ex, last.sets)}`));
+    if (last) block.appendChild(h("div", { class: "ex-last" }, `Last time (${fmtShort(last.date)}): ${describeSets(ex, last.sets)}`));
     const hint = progressionHint(ex, e, last);
     if (hint) block.appendChild(h("div", { class: "hint" }, hint));
 
     const fields = ex.fields.slice(0, 2);
     const one = fields.length === 1 ? " one-field" : "";
-    block.appendChild(h("div", { class: "set-head" + one }, h("span", null, "set"), fields.map((f) => h("span", null, FIELD_META[f].label + (f === "kg" && ex.kgOptional ? " (opt.)" : ""))), h("span", null, "")));
+    block.appendChild(h("div", { class: "set-grid set-head" + one }, h("span", null, "Set"), fields.map((f) => h("span", null, FIELD_META[f].label + (f === "kg" && ex.kgOptional ? " (opt.)" : ""))), h("span", null, "")));
     const rowsEl = h("div", { class: "set-rows" });
     rows.forEach((row, i) => rowsEl.appendChild(this.setRow(e, ex, row, i, fields)));
     block.appendChild(rowsEl);
-    block.appendChild(h("div", { class: "set-actions" },
-      h("button", { class: "btn small", onClick: () => { rows.push({ client_id: uuid(), set_index: rows.length, kg: null, reps: null, seconds: null, meters: null, saved: false }); rowsEl.appendChild(this.setRow(e, ex, rows[rows.length - 1], rows.length - 1, fields)); } }, "+ Set"),
-      h("button", { class: "btn small ghost", onClick: async () => {
+    block.appendChild(h("div", { class: "set-foot" },
+      h("button", { class: "btn text", onClick: () => { rows.push({ client_id: uuid(), set_index: rows.length, kg: null, reps: null, seconds: null, meters: null, saved: false }); rowsEl.appendChild(this.setRow(e, ex, rows[rows.length - 1], rows.length - 1, fields)); } }, "+ Add set"),
+      h("button", { class: "btn text muted", onClick: async () => {
         const row = rows[rows.length - 1];
         if (!row) return;
         if (row.saved && !confirm("Remove the last logged set?")) return;
@@ -315,13 +337,13 @@ class DayView {
     const tick = h("button", { class: "tick" + (row.saved ? " done" : ""), "aria-label": "Log set" }, "✓");
     const inputs = {};
     const save = debounce(() => this.saveSet(e.key, row).then(() => tick.classList.toggle("done", row.saved)), 700);
-    const rowEl = h("div", { class: "set-row" + (fields.length === 1 ? " one-field" : "") }, h("span", { class: "set-no" }, String(i + 1)));
+    const rowEl = h("div", { class: "set-grid set-row" + (fields.length === 1 ? " one-field" : "") }, h("span", { class: "set-no" }, String(i + 1)));
     for (const f of fields) {
-      const inp = h("input", { ...FIELD_META[f].attrs, value: row[f] ?? "", placeholder: String(this.placeholderFor(ex, e, rows, i, f)), class: row[f] != null ? "filled" : "" });
+      const inp = h("input", { ...FIELD_META[f].attrs, value: row[f] ?? "", placeholder: String(this.placeholderFor(ex, e, rows, i, f)), class: row[f] != null ? "filled" : "", "aria-label": FIELD_META[f].label });
       inp.addEventListener("input", () => { row[f] = inp.value === "" ? null : Number(inp.value); inp.classList.toggle("filled", row[f] != null); save(); });
       inp.addEventListener("focus", () => inp.select());
       inputs[f] = inp;
-      rowEl.appendChild(h("div", { class: "cell" }, inp));
+      rowEl.appendChild(h("div", { class: "cell" }, inp, h("span", { class: "unit" }, FIELD_META[f].label)));
     }
     tick.addEventListener("click", () => {
       // Empty fields take the placeholder (last time or previous set), then the set is saved.
@@ -344,16 +366,16 @@ class DayView {
 
   exerciseMenu(e) {
     const ex = exerciseFor(e.key);
-    const content = h("div", { class: "stack" },
-      h("button", { class: "btn wide", onClick: () => { close(); this.pickExercise((key) => this.replaceExercise(e, key), `Replace ${ex.name} with`); } }, "Replace with another exercise"),
-      h("button", { class: "btn wide danger", onClick: async () => {
-        if (!confirm(`Remove ${ex.name} from this session?`)) return;
-        close();
-        this.plan = this.plan.filter((p) => p !== e);
-        await this.saveWorkout({ plan: this.plan });
-        this.render();
-      } }, "Remove from this session"),
-      h("p", { class: "muted small" }, "Changes only affect this session. The plan itself stays the same."));
+    const list = h("div", { class: "action-list" });
+    list.appendChild(h("div", { class: "list-item", onClick: () => { close(); this.pickExercise((key) => this.replaceExercise(e, key), `Replace ${ex.name} with`); } }, h("div", null, h("div", { class: "title" }, "Replace with another exercise")), h("span", { class: "chev" }, "›")));
+    list.appendChild(h("div", { class: "list-item danger", onClick: async () => {
+      if (!confirm(`Remove ${ex.name} from this session?`)) return;
+      close();
+      this.plan = this.plan.filter((p) => p !== e);
+      await this.saveWorkout({ plan: this.plan });
+      this.render();
+    } }, h("div", null, h("div", { class: "title" }, "Remove from this session")), h("span", { class: "chev" }, "›")));
+    const content = h("div", null, list, h("p", { class: "muted small", style: { marginTop: ".8rem" } }, "Changes only affect this session. The plan itself stays the same."));
     const close = modal({ title: ex.name, content, actions: [{ label: "Cancel", class: "ghost" }] });
   }
 
@@ -373,21 +395,21 @@ class DayView {
       this.initRows();
       await this.saveWorkout({ plan: this.plan });
       this.render();
-    }, "Add exercise");
+    }, "Add an exercise");
   }
 
   pickExercise(onPick, title) {
     const all = Object.entries(PROGRAM.exercises).map(([key, v]) => ({ key, ...v }));
     const search = h("input", { type: "text", placeholder: "Search, or type a new name", autofocus: true });
-    const list = h("div", { class: "search-list" });
+    const list = h("div", { class: "search-list action-list" });
     const draw = () => {
       clear(list);
       const q = search.value.trim().toLowerCase();
       const matches = all.filter((x) => !q || x.name.toLowerCase().includes(q) || x.group.includes(q));
-      for (const x of matches.slice(0, 40)) list.appendChild(h("div", { class: "list-item", style: { cursor: "pointer" }, onClick: () => { close(); onPick(x.key); } }, h("div", null, h("div", { class: "title" }, x.name), h("div", { class: "sub" }, `${x.group} · ${x.fields.join(" + ")}`)), h("span", { class: "muted" }, "›")));
+      for (const x of matches.slice(0, 40)) list.appendChild(h("div", { class: "list-item", onClick: () => { close(); onPick(x.key); } }, h("div", null, h("div", { class: "title" }, x.name), h("div", { class: "sub" }, `${x.group} · ${x.fields.join(" + ")}`)), h("span", { class: "chev" }, "›")));
       if (q && !matches.some((x) => x.name.toLowerCase() === q)) {
         const key = "custom:" + q.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-        list.appendChild(h("div", { class: "list-item", style: { cursor: "pointer" }, onClick: () => { close(); onPick(key); } }, h("div", null, h("div", { class: "title" }, `Add "${search.value.trim()}"`), h("div", { class: "sub" }, "custom exercise, kg + reps")), h("span", { class: "muted" }, "›")));
+        list.appendChild(h("div", { class: "list-item", onClick: () => { close(); onPick(key); } }, h("div", null, h("div", { class: "title" }, `Add "${search.value.trim()}"`), h("div", { class: "sub" }, "custom exercise, kg + reps")), h("span", { class: "chev" }, "›")));
       }
     };
     search.addEventListener("input", draw);
@@ -400,7 +422,7 @@ class DayView {
   runBody(card) {
     const t = this.template;
     const w = this.workout || {};
-    if (t.detail) card.appendChild(h("p", null, t.detail));
+    if (t.detail) card.appendChild(h("p", { style: { marginTop: ".4rem" } }, t.detail));
     if (t.intervals) {
       const iv = t.intervals;
       card.appendChild(h("div", { class: "banner info" }, `10 min easy jog, then ${iv.reps} × ${iv.workSec / 60} min hard with ${iv.restSec / 60} min easy between, then a few minutes easy. Pace steady across every rep.`));
@@ -412,7 +434,7 @@ class DayView {
     const dist = h("input", { type: "number", inputmode: "decimal", step: "0.01", min: "0", placeholder: t.timeTrial ? "5.00" : "km", value: w.distance_km ?? "" });
     const time = h("input", { type: "text", inputmode: "numeric", placeholder: "mm:ss", value: w.time_sec ? fmtTime(w.time_sec) : "" });
     const hr = h("input", { type: "number", inputmode: "numeric", placeholder: "bpm", value: w.avg_hr ?? "" });
-    const pace = h("div", { class: "muted small", style: { minHeight: "1.2em" } });
+    const pace = h("div", { class: "muted small", style: { minHeight: "1.2em", marginTop: ".4rem" } });
     const updatePace = () => {
       const d = Number(dist.value), s = parseTime(time.value);
       pace.textContent = d > 0 && s ? `Pace ${fmtPace(s / d)}` : "";
@@ -425,7 +447,7 @@ class DayView {
       this.updateStatusBadge();
     }, 700);
     [dist, time, hr].forEach((i) => i.addEventListener("input", () => { updatePace(); saveFields(); }));
-    card.appendChild(h("div", { class: "inline-fields", style: { marginTop: ".4rem" } },
+    card.appendChild(h("div", { class: "inline-fields", style: { marginTop: ".6rem" } },
       h("label", { class: "field" }, h("span", null, "Distance (km)"), dist),
       h("label", { class: "field" }, h("span", null, "Time"), time),
       h("label", { class: "field" }, h("span", null, "Avg heart rate"), hr)));
@@ -435,14 +457,14 @@ class DayView {
 
   garminBlock() {
     const acts = (this.workout && this.workout.activities) || [];
-    const wrap = h("div", { style: { marginTop: ".6rem" } });
+    const wrap = h("div", { style: { marginTop: ".4rem" } });
     wrap.appendChild(h("div", { class: "section-title" }, "Garmin"));
     for (const a of acts) {
       wrap.appendChild(h("div", { class: "list-item", style: { cursor: "pointer" }, onClick: () => showActivity(a.id) },
         h("div", null,
           h("div", { class: "title" }, `${a.distance_m ? (a.distance_m / 1000).toFixed(2) + " km" : ""} ${a.duration_s ? "· " + fmtTime(a.duration_s) : ""} ${a.avg_pace_s_per_km ? "· " + fmtPace(a.avg_pace_s_per_km) : ""}`),
           h("div", { class: "sub" }, [a.avg_hr ? `avg HR ${a.avg_hr}` : null, a.max_hr ? `max ${a.max_hr}` : null, a.best_5k_s ? `best 5 km ${fmtTime(a.best_5k_s)}` : null, a.elevation_gain_m != null ? `${Math.round(a.elevation_gain_m)} m up` : null].filter(Boolean).join(" · "))),
-        h("span", { class: "muted" }, "›")));
+        h("span", { class: "chev" }, "›")));
     }
     const file = h("input", { type: "file", accept: ".fit,.tcx,.gpx,.csv,application/octet-stream", multiple: true });
     file.addEventListener("change", async () => {
@@ -459,26 +481,23 @@ class DayView {
         const r = await api.upload(fd);
         const failed = r.uploads.filter((u) => u.status === "failed");
         toast(failed.length ? `Stored, but could not parse: ${failed[0].error}` : "Garmin file attached", failed.length > 0);
-        const fresh = await api.get(`/api/day/${this.date}`);
-        store.set(`ft_day_${this.date}`, fresh);
-        const v = new DayView(this.container, this.date, fresh, false);
-        this.destroy(); v.render();
+        await this.reload();
       } catch (e) { toast(e.message, true); }
     });
-    wrap.appendChild(h("label", { class: "field" }, h("span", null, acts.length ? "Attach another file (FIT, TCX, GPX or CSV)" : "Attach the Garmin file for this run (FIT, TCX, GPX or CSV)"), file));
+    wrap.appendChild(h("label", { class: "field", style: { marginBottom: 0 } }, h("span", null, acts.length ? "Attach another file (FIT, TCX, GPX or CSV)" : "Attach the Garmin file for this run (FIT, TCX, GPX or CSV)"), file));
     return wrap;
   }
 
   // ----- rest -----
   restBody(card) {
     const t = this.template;
-    if (t.detail) card.appendChild(h("p", null, t.detail));
-    card.appendChild(h("p", { class: "muted small" }, PROGRAM.stepsNote));
+    if (t.detail) card.appendChild(h("p", { style: { marginTop: ".4rem" } }, t.detail));
+    card.appendChild(h("p", { class: "muted small", style: { margin: 0 } }, PROGRAM.stepsNote));
   }
 
   kneeCard(optional = false) {
     const card = h("div", { class: "card" });
-    card.appendChild(h("div", { class: "card-title" }, h("h3", null, PROGRAM.kneeRoutine.title, " ", h("span", { class: "muted small" }, `${PROGRAM.kneeRoutine.minutes} min`))));
+    card.appendChild(h("div", { class: "card-title" }, h("h3", null, PROGRAM.kneeRoutine.title), h("span", { class: "badge" }, `${PROGRAM.kneeRoutine.minutes} min`)));
     card.appendChild(h("p", { class: "muted small" }, PROGRAM.kneeRoutine.note + (optional ? " Optional after the run." : "")));
     card.appendChild(this.checklistBlock("knee", "Routine", PROGRAM.kneeRoutine.items, null, false));
     return card;
@@ -507,32 +526,31 @@ class DayView {
     return card;
   }
 
-  // ----- notes and actions -----
-  notesField() {
-    const ta = h("textarea", { placeholder: "Notes (how it felt, knees, anything for later)", value: (this.workout && this.workout.notes) || "" });
+  // ----- notes, finish, secondary actions -----
+  finishCard() {
+    const st = this.workout ? this.workout.status : "in_progress";
+    const card = h("div", { class: "card" });
+    const ta = h("textarea", { placeholder: "How it felt, knees, anything for later", value: (this.workout && this.workout.notes) || "" });
     ta.addEventListener("input", () => this.saveWorkoutDebounced({ notes: ta.value }));
-    return h("label", { class: "field", style: { marginTop: ".8rem" } }, h("span", null, "Notes"), ta);
+    card.appendChild(h("label", { class: "field" }, h("span", null, "Notes"), ta));
+    if (st !== "done") card.appendChild(h("button", { class: "btn primary wide", onClick: () => this.finishDialog() }, this.template.kind === "rest" ? "Mark day done" : "Finish session"));
+    else card.appendChild(h("button", { class: "btn wide", onClick: async () => { await this.saveWorkout({ status: "in_progress" }); this.render(); } }, "Reopen session"));
+    card.appendChild(h("div", { class: "timer", dataset: { timer: "1" }, style: { marginTop: ".6rem", textAlign: "center" } }));
+    return card;
   }
 
-  actions() {
+  actionsCard() {
     const st = this.workout ? this.workout.status : "in_progress";
-    const wrap = h("div", { class: "stack", style: { marginTop: ".4rem" } });
-    const row = h("div", { class: "row" });
-    if (st !== "done") row.appendChild(h("button", { class: "btn primary grow", onClick: () => this.finishDialog() }, this.template.kind === "rest" ? "Mark day done" : "Finish session"));
-    else row.appendChild(h("button", { class: "btn grow", onClick: async () => { await this.saveWorkout({ status: "in_progress" }); this.render(); } }, "Reopen session"));
-    wrap.appendChild(row);
-    const row2 = h("div", { class: "row" });
-    row2.appendChild(h("button", { class: "btn small ghost", onClick: () => this.swapDialog() }, "Swap session"));
-    if (st !== "skipped") row2.appendChild(h("button", { class: "btn small ghost", onClick: async () => { await this.saveWorkout({ status: "skipped" }); toast("Marked as skipped"); this.render(); } }, "Skip"));
-    else row2.appendChild(h("button", { class: "btn small ghost", onClick: async () => { await this.saveWorkout({ status: "in_progress" }); this.render(); } }, "Unskip"));
-    if (this.workout && this.workout.id) row2.appendChild(h("button", { class: "btn small ghost danger", onClick: async () => {
+    const list = h("div", { class: "card action-list" });
+    const item = (title, sub, cls, fn) => list.appendChild(h("div", { class: `list-item ${cls || ""}`, onClick: fn }, h("div", null, h("div", { class: "title" }, title), sub ? h("div", { class: "sub" }, sub) : null), h("span", { class: "chev" }, "›")));
+    item("Move or change this session", "Swap with another day, or do a different session today", "accent", () => this.changeDialog());
+    if (st !== "skipped") item("Skip this session", null, "", async () => { await this.saveWorkout({ status: "skipped" }); toast("Marked as skipped"); this.render(); });
+    else item("Unskip", null, "", async () => { await this.saveWorkout({ status: "in_progress" }); this.render(); });
+    if (this.workout && this.workout.id) item("Delete this session and its sets", null, "danger", async () => {
       if (!confirm("Delete this session and all its sets?")) return;
       try { await api.del(`/api/workouts/${this.workout.id}`); store.del(`ft_active_${this.date}`); toast("Deleted"); location.reload(); } catch (e) { toast(e.message, true); }
-    } }, "Delete"));
-    wrap.appendChild(row2);
-    const timer = h("div", { class: "timer", dataset: { timer: "1" } });
-    wrap.appendChild(timer);
-    return wrap;
+    });
+    return list;
   }
 
   finishDialog() {
@@ -562,22 +580,52 @@ class DayView {
     });
   }
 
-  swapDialog() {
-    const list = h("div", { class: "search-list" });
-    const keys = ["lift_a", "lift_b", "lift_c", "intervals_6x2", "intervals_5x3", "intervals_4x4", "time_trial_5k", "easy_run", "other", "rest_walk"];
-    for (const k of keys) {
-      const t = PROGRAM.templates[k];
-      list.appendChild(h("div", { class: "list-item", style: { cursor: "pointer" }, onClick: async () => {
+  // Move this day's session to another day (swap), or change what is done today.
+  async changeDialog() {
+    const monday = mondayOf(this.date);
+    let sched = null;
+    try { sched = await api.get(`/api/schedule?from=${monday}&to=${addDays(monday, 13)}`); } catch (e) { toast(e.message, true); return; }
+    const content = h("div", null);
+    content.appendChild(h("p", { class: "muted small" }, "Days are interchangeable. Avoid two lifting days back to back, and keep jump days 48 hours apart."));
+    content.appendChild(h("div", { class: "section-title", style: { margin: ".9rem 0 .2rem" } }, "Swap with another day"));
+    const days = h("div", { class: "action-list" });
+    for (const d of sched.days) {
+      if (d.date === this.date) continue;
+      const w = d.workouts.find((x) => x.template_key === d.templateKey);
+      days.appendChild(h("div", { class: "list-item", onClick: () => {
         close();
-        if (k === this.templateKey) return;
-        store.set(`ft_active_${this.date}`, k);
-        const existing = this.data.workouts.find((w) => w.template_key === k);
-        if (!existing) await queuedWrite("PUT", `/api/day/${this.date}/workout`, { template_key: k }, `workout:${this.date}:${k}:create`);
-        const fresh = await api.get(`/api/day/${this.date}`).catch(() => null);
-        if (fresh) { store.set(`ft_day_${this.date}`, fresh); this.destroy(); new DayView(this.container, this.date, fresh, false).render(); }
-      } }, h("div", null, h("div", { class: `title kind-${t.kind}` }, t.name, k === this.day.templateKey ? h("span", { class: "badge", style: { marginLeft: ".4rem" } }, "scheduled") : null), h("div", { class: "sub" }, t.subtitle)), h("span", { class: "muted" }, "›")));
+        modal({ title: "Swap these two days?", content: h("div", null, h("p", null, h("b", null, fmtDay(this.date)), ` becomes ${d.name}.`), h("p", null, h("b", null, fmtDay(d.date)), ` becomes ${this.day.template.name}.`)),
+          actions: [{ label: "Cancel", class: "ghost" }, { label: "Swap", class: "primary", onClick: async () => {
+            try {
+              await api.post("/api/schedule/swap", { a: this.date, b: d.date });
+              store.del(`ft_active_${this.date}`); store.del(`ft_active_${d.date}`); store.del(`ft_day_${d.date}`);
+              toast("Swapped");
+            } catch (e) { toast(e.message, true); }
+            this.reload();
+          } }] });
+      } },
+        h("div", null, h("div", { class: `title` }, `${fmtDay(d.date)}`, d.date === this.today ? h("span", { class: "badge accent", style: { marginLeft: ".4rem" } }, "today") : null), h("div", { class: `sub kind-${d.kind}` }, [d.name, w ? w.status.replace("_", " ") : null, d.moved ? "moved" : null].filter(Boolean).join(" · "))),
+        h("span", { class: "chev" }, "›")));
     }
-    const close = modal({ title: "Which session is this?", content: h("div", null, h("p", { class: "muted small" }, "Days are interchangeable. Just not two lifting days back to back, and keep jump days 48 hours apart."), list), actions: [{ label: "Cancel", class: "ghost" }] });
+    content.appendChild(days);
+    content.appendChild(h("div", { class: "section-title", style: { margin: "1rem 0 .2rem" } }, "Or do a different session today"));
+    const list = h("div", { class: "action-list" });
+    for (const k of PICKABLE) {
+      const t = PROGRAM.templates[k];
+      list.appendChild(h("div", { class: "list-item", onClick: async () => {
+        close();
+        if (k === this.day.templateKey) return;
+        try { await api.put(`/api/schedule/${this.date}`, { template_key: k }); store.del(`ft_active_${this.date}`); toast("Session changed"); } catch (e) { toast(e.message, true); }
+        this.reload();
+      } }, h("div", null, h("div", { class: `title kind-${t.kind}` }, t.name, k === this.day.defaultTemplateKey ? h("span", { class: "badge", style: { marginLeft: ".4rem" } }, "planned") : null, k === this.day.templateKey && this.day.moved ? h("span", { class: "badge accent", style: { marginLeft: ".4rem" } }, "current") : null), h("div", { class: "sub" }, t.subtitle)), h("span", { class: "chev" }, "›")));
+    }
+    content.appendChild(list);
+    if (this.day.moved) content.appendChild(h("button", { class: "btn tinted wide", style: { marginTop: ".9rem" }, onClick: async () => {
+      close();
+      try { await api.put(`/api/schedule/${this.date}`, { template_key: null }); store.del(`ft_active_${this.date}`); toast("Back to the plan"); } catch (e) { toast(e.message, true); }
+      this.reload();
+    } }, `Back to the plan: ${templateFor(this.day.defaultTemplateKey).name}`));
+    const close = modal({ title: "Move or change", content, actions: [{ label: "Cancel", class: "ghost" }] });
   }
 
   otherWorkoutCard(w) {
@@ -614,7 +662,6 @@ export function describeSets(ex, sets) {
     const sameW = w.every((x) => x === w[0]);
     return sameW ? `${fmtKg(w[0]) || 0} kg × ${sets.map((s) => s.reps ?? 0).join(", ")}` : sets.map((s) => `${fmtKg(s.weight_kg) || 0}×${s.reps ?? 0}`).join(", ");
   }
-  if (ex.fields[0] === "reps") return sets.map((s) => `${s.reps ?? 0}${s.weight_kg ? ` (+${fmtKg(s.weight_kg)} kg)` : ""}`).join(", ");
   if (ex.fields.includes("seconds")) return sets.map((s) => `${s.seconds ?? 0} s`).join(", ");
   if (ex.fields.includes("meters")) return sets.map((s) => `${fmtKg(s.weight_kg) || 0} kg × ${s.distance_m ?? 0} m`).join(", ");
   return "";
@@ -655,4 +702,4 @@ export async function showActivity(id) {
     ], xLabels: (v) => v + " km" });
   }
 }
-function tile(label, value) { return h("div", { class: "tile" }, h("div", { class: "label" }, label), h("div", { class: "value", style: { fontSize: "1.05rem" } }, value || "–")); }
+function tile(label, value) { return h("div", { class: "tile", style: { background: "var(--fill-2)" } }, h("div", { class: "label" }, label), h("div", { class: "value", style: { fontSize: "1.05rem" } }, value || "–")); }

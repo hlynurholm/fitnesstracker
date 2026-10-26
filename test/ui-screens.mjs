@@ -55,12 +55,37 @@ if (!checked) errors.push("checklist persistence failed");
 
 // Run day, week 1 Tuesday
 await p.goto(base + "/day/2026-10-27");
-await p.waitForSelector(".card.accent");
+await p.waitForSelector(".session-card");
 await p.screenshot({ path: `${out}/phone-run-day.png`, fullPage: true });
 // Rest day
 await p.goto(base + "/day/2026-10-31");
-await p.waitForSelector(".card.accent");
+await p.waitForSelector(".session-card");
 await p.screenshot({ path: `${out}/phone-rest-day.png`, fullPage: true });
+// Week strip highlights the selected day, not today
+await p.goto(base + "/day/2026-10-29"); await p.waitForSelector(".week-strip");
+const selText = await p.locator(".week-day.selected b").textContent();
+console.log("week strip selected day:", selText);
+if (selText.trim() !== "29") errors.push("week strip selected day wrong: " + selText);
+// Calendar: open, swap two days, check, swap back
+await p.goto(base + "/calendar/2026-11"); await p.waitForSelector(".cal-cell");
+await p.screenshot({ path: `${out}/phone-calendar.png`, fullPage: true });
+await p.locator('.cal-cell[title^="Mon 9 Nov"]').click();
+await p.waitForSelector(".modal");
+await p.screenshot({ path: `${out}/phone-calendar-sheet.png`, fullPage: false });
+await p.locator(".modal .list-item", { hasText: "Swap with another day" }).click();
+await p.locator('.cal-cell[title^="Tue 10 Nov"]').click();
+await p.locator(".modal .btn.primary", { hasText: "Swap" }).click();
+await p.waitForTimeout(1200);
+const tueLabel = await p.locator('.cal-cell[title^="Tue 10 Nov"] .s').textContent();
+console.log("Tue 10 Nov after swap:", tueLabel);
+if (!/Lift A/.test(tueLabel)) errors.push("calendar swap failed: " + tueLabel);
+await p.locator('.cal-cell[title^="Tue 10 Nov"]').click();
+await p.locator(".modal .list-item", { hasText: "Swap with another day" }).click();
+await p.locator('.cal-cell[title^="Mon 9 Nov"]').click();
+await p.locator(".modal .btn.primary", { hasText: "Swap" }).click();
+await p.waitForTimeout(1200);
+const monLabel = await p.locator('.cal-cell[title^="Mon 9 Nov"] .s').textContent();
+if (!/Lift A/.test(monLabel)) errors.push("calendar swap back failed: " + monLabel);
 // History, progress, data
 await p.goto(base + "/history"); await p.waitForSelector(".list-item"); await p.screenshot({ path: `${out}/phone-history.png`, fullPage: true });
 await p.goto(base + "/progress"); await p.waitForSelector(".tiles"); await p.waitForTimeout(800); await p.screenshot({ path: `${out}/phone-progress.png`, fullPage: true });
@@ -73,6 +98,7 @@ const desk = await browser.newContext({ viewport: { width: 1366, height: 900 }, 
 const d = await login(desk);
 await d.waitForSelector(".exercise");
 await d.screenshot({ path: `${out}/desktop-today.png`, fullPage: false });
+await d.goto(base + "/calendar"); await d.waitForSelector(".cal-cell"); await d.screenshot({ path: `${out}/desktop-calendar.png`, fullPage: false });
 await d.goto(base + "/progress"); await d.waitForSelector(".tiles"); await d.waitForTimeout(1000);
 await d.screenshot({ path: `${out}/desktop-progress.png`, fullPage: true });
 await d.goto(base + "/data"); await d.waitForSelector(".card"); await d.screenshot({ path: `${out}/desktop-data.png`, fullPage: true });

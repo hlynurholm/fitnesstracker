@@ -1,6 +1,6 @@
 // JSON API. All routes here require auth (checked in index.js).
-import { PROGRAM, resolveDay, templateFor, buildPlan, mondayOf, addDays, todayLocal, weekNumber, phaseForWeek } from "../public/js/program.js";
-import { getSettings, setSettings, ensureWorkout, rowWithJson, WORKOUT_FIELDS, num, gzip, gunzip, blobToBytes, toArrayBuffer, b64encode } from "./db.js";
+import { PROGRAM, resolveDay, templateFor, buildPlan, mondayOf, addDays, daysBetween, todayLocal, weekNumber, phaseForWeek, scheduledTemplateKey } from "../public/js/program.js";
+import { getSettings, setSettings, getOverrides, ensureWorkout, rowWithJson, WORKOUT_FIELDS, num, gzip, gunzip, blobToBytes, toArrayBuffer, b64encode } from "./db.js";
 import { parseUpload } from "./parsers/index.js";
 import { buildSummaryMarkdown } from "./summary.js";
 
@@ -51,6 +51,39 @@ async function route(method, p, request, env, url, settings) {
       }
       await setSettings(env, clean);
       return getSettings(env);
+    }
+  }
+
+  if (a === "schedule") {
+    // Planned sessions per day, with overrides. Lets the calendar show a date range and lets sessions move.
+    if (!b && method === "GET") {
+      const from = assertDate(url.searchParams.get("from")), to = assertDate(url.searchParams.get("to"));
+      if (daysBetween(from, to) < 0 || daysBetween(from, to) > 120) bad("Range must be 0 to 120 days");
+      return getSchedule(env, settings, from, to);
+    }
+    if (b === "swap" && method === "POST") {
+      const body = await readJson(request);
+      const da = assertDate(body.a), db = assertDate(body.b);
+      if (da === db) bad("Pick two different days");
+      const ka = resolveDay(da, settings).templateKey, kb = resolveDay(db, settings).templateKey;
+      await setOverride(env, da, kb, settings);
+      await setOverride(env, db, ka, settings);
+      await pruneEmptyWorkout(env, da, ka);
+      await pruneEmptyWorkout(env, db, kb);
+      settings.overrides = await getOverrides(env);
+      return { a: resolveDay(da, settings), b: resolveDay(db, settings) };
+    }
+    if (b && b !== "swap" && (method === "PUT" || method === "DELETE")) {
+      const date = assertDate(b);
+      const body = method === "DELETE" ? {} : await readJson(request);
+      const key = body.template_key || null;
+      if (key && !PROGRAM.templates[key]) bad("Unknown template");
+      const before = resolveDay(date, settings).templateKey;
+      await setOverride(env, date, key, settings);
+      settings.overrides = await getOverrides(env);
+      const after = resolveDay(date, settings);
+      if (after.templateKey !== before) await pruneEmptyWorkout(env, date, before);
+      return after;
     }
   }
 
@@ -263,9 +296,35 @@ async function getDay(env, date, settings) {
   for (let i = 0; i < 7; i++) {
     const d = addDays(monday, i);
     const r = resolveDay(d, settings);
-    week.push({ date: d, templateKey: r.templateKey, kind: r.template.kind, name: r.template.name, workouts: weekRows.filter((w) => w.date === d) });
+    week.push({ date: d, templateKey: r.templateKey, kind: r.template.kind, name: r.template.name, moved: r.moved, workouts: weekRows.filter((w) => w.date === d) });
   }
   return { day, workouts, active, last, body, tests, week, today: todayLocal() };
+}
+
+// ---------- schedule ----------
+async function setOverride(env, date, key, settings) {
+  const def = scheduledTemplateKey(date, Math.max(weekNumber(date, settings.program_start_date), 1));
+  if (!key || key === def) await env.DB.prepare("DELETE FROM schedule_overrides WHERE date = ?").bind(date).run();
+  else await env.DB.prepare("INSERT INTO schedule_overrides (date, template_key) VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET template_key = excluded.template_key, created_at = datetime('now')").bind(date, key).run();
+}
+
+// A workout row that was created by opening the day but never used is removed when the session moves away.
+async function pruneEmptyWorkout(env, date, templateKey) {
+  const w = await env.DB.prepare("SELECT id FROM workouts WHERE date = ? AND template_key = ? AND status = 'in_progress' AND notes IS NULL AND time_sec IS NULL AND distance_km IS NULL AND rpe IS NULL AND checklist_json IS NULL AND NOT EXISTS (SELECT 1 FROM sets s WHERE s.workout_id = workouts.id) AND NOT EXISTS (SELECT 1 FROM activities a WHERE a.workout_id = workouts.id) AND NOT EXISTS (SELECT 1 FROM uploads u WHERE u.workout_id = workouts.id)").bind(date, templateKey).first();
+  if (w) await env.DB.prepare("DELETE FROM workouts WHERE id = ?").bind(w.id).run();
+}
+
+async function getSchedule(env, settings, from, to) {
+  const { results: rows } = await env.DB.prepare(
+    `SELECT w.id, w.date, w.template_key, w.kind, w.status, w.distance_km, w.time_sec, w.rpe,
+            (SELECT COUNT(*) FROM sets s WHERE s.workout_id = w.id AND s.done = 1) AS set_count
+     FROM workouts w WHERE w.date BETWEEN ? AND ? ORDER BY w.date, w.id`).bind(from, to).all();
+  const days = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    const r = resolveDay(d, settings);
+    days.push({ date: d, week: r.week, templateKey: r.templateKey, defaultTemplateKey: r.defaultTemplateKey, moved: r.moved, kind: r.template.kind, name: r.template.name, subtitle: r.template.subtitle, deload: r.deload, testWeek: r.testWeek, workouts: rows.filter((w) => w.date === d) });
+  }
+  return { from, to, today: todayLocal(), days };
 }
 
 async function upsertDayWorkout(env, date, body, settings) {

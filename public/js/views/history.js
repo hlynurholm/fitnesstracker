@@ -1,15 +1,16 @@
 // History: every logged session, newest first, grouped by program week.
 import { api } from "../api.js";
-import { h, clear, fmtDay, fmtShort, secondsToHms } from "../util.js";
+import { h, clear, fmtDay, fmtShort, secondsToHms, segmented } from "../util.js";
 import { templateFor, weekNumber, fmtTime, fmtPace } from "../program.js";
 import { state } from "../app.js";
 
 export async function renderHistory(container) {
   const workouts = await api.get("/api/workouts?limit=500");
   clear(container);
-  container.appendChild(h("h1", null, "History"));
+  container.appendChild(h("div", { class: "page-head" }, h("div", null, h("h1", null, "Calendar"), h("div", { class: "sub" }, "Everything logged, newest first")),
+    h("div", { class: "controls" }, segmented([{ label: "Month", href: "/calendar" }, { label: "List", href: "/history" }], 1))));
   if (!workouts.length) {
-    container.appendChild(h("div", { class: "card" }, h("p", null, "Nothing logged yet. Open Today and log the first session.")));
+    container.appendChild(h("div", { class: "card" }, h("p", { class: "muted" }, "Nothing logged yet. Open Today and log the first session.")));
     return;
   }
   const start = state.settings.program_start_date;

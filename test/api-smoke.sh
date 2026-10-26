@@ -36,6 +36,15 @@ out=$(j "$BASE/api/day/2026-10-26"); check "day returns the 4 logged sets" '[[ "
 out=$(j -X PUT -d '{"template_key":"lift_a","status":"done","rpe":7,"notes":"knees fine","checklist":{"warmup":{"bike":true}}}' "$BASE/api/day/2026-10-26/workout"); check "workout done with rpe" '[[ "$out" == *"\"rpe\":7"* && "$out" == *"\"status\":\"done\""* ]]'
 # last values show up on the next Lift A (2 Nov)
 out=$(j "$BASE/api/day/2026-11-02"); check "next Lift A shows last values" '[[ "$out" == *"\"last\":{"* && "$out" == *"back_squat"* && "$out" == *"77.5"* ]]'
+# schedule: move sessions between days
+out=$(j "$BASE/api/schedule?from=2026-11-02&to=2026-11-08"); check "schedule range lists 7 days" '[[ "$out" == *"\"days\":[{"* && "$out" == *"2026-11-08"* ]]'
+out=$(j -X POST -d '{"a":"2026-11-02","b":"2026-11-03"}' "$BASE/api/schedule/swap"); check "swap Mon and Tue of week 2" '[[ "$out" == *"\"moved\":true"* ]]'
+out=$(j "$BASE/api/day/2026-11-03"); check "Tuesday now shows Lift A" '[[ "$out" == *"\"templateKey\":\"lift_a\""* && "$out" == *"\"moved\":true"* ]]'
+out=$(j "$BASE/api/day/2026-11-02"); check "Monday now shows intervals" '[[ "$out" == *"\"templateKey\":\"intervals_6x2\""* ]]'
+out=$(j -X PUT -d '{"template_key":"lift_b"}' "$BASE/api/schedule/2026-11-05"); check "change Thursday to Lift B" '[[ "$out" == *"\"templateKey\":\"lift_b\""* ]]'
+out=$(j -X PUT -d '{"template_key":null}' "$BASE/api/schedule/2026-11-05"); check "reset Thursday to the plan" '[[ "$out" == *"\"templateKey\":\"easy_run\""* && "$out" == *"\"moved\":false"* ]]'
+out=$(j -X PUT -d '{"template_key":"bogus"}' "$BASE/api/schedule/2026-11-05"); check "unknown template rejected" '[[ "$out" == *"Unknown template"* ]]'
+j -X POST -d '{"a":"2026-11-02","b":"2026-11-03"}' "$BASE/api/schedule/swap" >/dev/null; out=$(j "$BASE/api/day/2026-11-02"); check "swapping back clears the override" '[[ "$out" == *"\"templateKey\":\"lift_a\""* && "$out" == *"\"moved\":false"* ]]'
 # body weight and tests
 out=$(j -X PUT -d '{"date":"2026-10-26","weight_kg":93.0}' "$BASE/api/body"); check "body weight saved" '[[ "$out" == *"93"* ]]'
 out=$(j -X PUT -d '{"date":"2026-10-27","test_key":"five_k_sec","value":1560}' "$BASE/api/tests"); check "test saved with week 1" '[[ "$out" == *"\"week_no\":1"* ]]'

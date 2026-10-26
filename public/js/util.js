@@ -105,3 +105,11 @@ export function download(filename, text, type = "application/json") {
 export async function copyText(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
 }
+
+// iOS style segmented control. items: [{label, href}] or [{label, onClick}], active: index.
+export function segmented(items, active) {
+  return h("div", { class: "segmented", role: "tablist" }, items.map((it, i) => it.href
+    ? h("a", { class: i === active ? "active" : "", href: it.href, role: "tab" }, it.label)
+    : h("button", { class: i === active ? "active" : "", onClick: it.onClick, role: "tab" }, it.label)));
+}
+export const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];

@@ -319,11 +319,15 @@ export function resolveDay(dateStr, settings = {}) {
   const startDate = settings.program_start_date || PROGRAM.startDateDefault;
   const week = weekNumber(dateStr, startDate);
   const phase = phaseForWeek(week, settings);
-  const templateKey = scheduledTemplateKey(dateStr, Math.max(week, 1));
+  const defaultTemplateKey = scheduledTemplateKey(dateStr, Math.max(week, 1));
+  const override = settings.overrides ? settings.overrides[dateStr] : null;
+  const templateKey = override && PROGRAM.templates[override] ? override : defaultTemplateKey;
   const template = templateFor(templateKey);
   const phaseInfo = PROGRAM.phases.find((p) => p.id === phase);
   return {
     date: dateStr,
+    defaultTemplateKey,
+    moved: templateKey !== defaultTemplateKey,
     weekday: isoWeekday(dateStr),
     weekdayName: WEEKDAYS_LONG[isoWeekday(dateStr) - 1],
     week,

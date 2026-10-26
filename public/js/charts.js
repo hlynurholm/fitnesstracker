@@ -1,7 +1,7 @@
 // Chart.js helpers with a consistent palette and dark mode support.
 import { fmtShort, secondsToHms } from "./util.js";
 
-export const PALETTE = ["#1f6feb", "#e4793a", "#1f8f4d", "#8b5cf6", "#d63384", "#0aa2c0", "#b58900", "#6c757d", "#ff6b6b", "#2bb673"];
+export const PALETTE = ["#007aff", "#ff9500", "#34c759", "#af52de", "#ff2d55", "#5ac8fa", "#ffcc00", "#8e8e93", "#ff3b30", "#30d158"];
 function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
 export function baseOptions(extra = {}) {

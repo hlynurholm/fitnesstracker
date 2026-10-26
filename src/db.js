@@ -2,11 +2,24 @@
 import { PROGRAM, resolveDay, templateFor, buildPlan } from "../public/js/program.js";
 
 export async function getSettings(env) {
-  const { results } = await env.DB.prepare("SELECT key, value FROM settings").all();
+  const [{ results }, { results: ov }] = await env.DB.batch([
+    env.DB.prepare("SELECT key, value FROM settings"),
+    env.DB.prepare("SELECT date, template_key FROM schedule_overrides"),
+  ]);
   const s = {};
   for (const r of results || []) s[r.key] = r.value;
   if (!s.program_start_date) s.program_start_date = PROGRAM.startDateDefault;
+  // Days whose planned session was moved or changed. Read by resolveDay().
+  s.overrides = {};
+  for (const r of ov || []) s.overrides[r.date] = r.template_key;
   return s;
+}
+
+export async function getOverrides(env) {
+  const { results } = await env.DB.prepare("SELECT date, template_key FROM schedule_overrides").all();
+  const o = {};
+  for (const r of results || []) o[r.date] = r.template_key;
+  return o;
 }
 
 export async function setSettings(env, obj) {

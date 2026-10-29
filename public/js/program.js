@@ -121,7 +121,8 @@ export const PROGRAM = {
     // Alternatives and extras that can be swapped in.
     pull_up: { name: "Pull-ups", fields: ["reps", "kg"], load: "bodyweight", increment: 2.5, group: "pull", kgHint: "added kg", kgOptional: true },
     ball_squeeze: { name: "Lying ball squeeze", fields: ["seconds"], load: "bodyweight", group: "legs" },
-    copenhagen_plank: { name: "Copenhagen side plank", fields: ["seconds"], load: "bodyweight", group: "core", perSide: true },
+    // Kept for history only (logged once on 2026-10-26); not offered as a swap because it loads his unstable right knee.
+    copenhagen_plank: { name: "Copenhagen side plank", fields: ["seconds"], load: "bodyweight", group: "core", perSide: true, hidden: true },
     barbell_bench: { name: "Barbell bench press", fields: ["kg", "reps"], load: "barbell", increment: 2.5, group: "push", e1rm: true },
     front_squat: { name: "Front squat", fields: ["kg", "reps"], load: "barbell", increment: 2.5, group: "legs", e1rm: true },
     goblet_squat: { name: "Goblet squat", fields: ["kg", "reps"], load: "dumbbell", increment: 2, group: "legs", e1rm: true },

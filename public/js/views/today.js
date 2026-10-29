@@ -577,7 +577,7 @@ class DayView {
   }
 
   pickExercise(onPick, title) {
-    const all = Object.entries(PROGRAM.exercises).map(([key, v]) => ({ key, ...v }));
+    const all = Object.entries(PROGRAM.exercises).filter(([, v]) => !v.hidden).map(([key, v]) => ({ key, ...v }));
     const search = h("input", { type: "text", placeholder: "Search, or type a new name", autofocus: true });
     const list = h("div", { class: "search-list action-list" });
     const draw = () => {

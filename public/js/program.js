@@ -98,8 +98,8 @@ export const PROGRAM = {
     back_squat: { name: "Back squat", fields: ["kg", "reps"], load: "barbell", increment: 2.5, group: "legs", e1rm: true },
     db_bench: { name: "DB bench press", fields: ["kg", "reps"], load: "dumbbell", increment: 2, group: "push", e1rm: true, kgHint: "per hand" },
     db_single_leg_rdl: { name: "DB single leg RDL", fields: ["kg", "reps"], load: "dumbbell", increment: 2, group: "legs", perSide: true, e1rm: true, kgHint: "per hand" },
-    pull_up: { name: "Pull-ups", fields: ["reps", "kg"], load: "bodyweight", increment: 2.5, group: "pull", kgHint: "added kg", kgOptional: true },
-    copenhagen_plank: { name: "Copenhagen side plank", fields: ["seconds"], load: "bodyweight", group: "core", perSide: true },
+    band_pull_up: { name: "Banded pull-ups", fields: ["reps"], load: "bodyweight", group: "pull" },
+    adductor_machine: { name: "Adductor machine", fields: ["kg", "reps"], load: "machine", increment: 2.5, group: "legs" },
     suitcase_march: { name: "Suitcase march on the spot", short: "Suitcase march", fields: ["kg", "seconds"], load: "dumbbell", increment: 2, group: "core", perSide: true, kgHint: "one hand" },
     suitcase_carry: { name: "Suitcase carry", fields: ["kg", "meters"], load: "dumbbell", increment: 2, group: "core", perSide: true },
 
@@ -119,6 +119,9 @@ export const PROGRAM = {
     pallof_press: { name: "Pallof press", fields: ["kg", "reps"], load: "cable", increment: 2.5, group: "core", perSide: true },
 
     // Alternatives and extras that can be swapped in.
+    pull_up: { name: "Pull-ups", fields: ["reps", "kg"], load: "bodyweight", increment: 2.5, group: "pull", kgHint: "added kg", kgOptional: true },
+    ball_squeeze: { name: "Lying ball squeeze", fields: ["seconds"], load: "bodyweight", group: "legs" },
+    copenhagen_plank: { name: "Copenhagen side plank", fields: ["seconds"], load: "bodyweight", group: "core", perSide: true },
     barbell_bench: { name: "Barbell bench press", fields: ["kg", "reps"], load: "barbell", increment: 2.5, group: "push", e1rm: true },
     front_squat: { name: "Front squat", fields: ["kg", "reps"], load: "barbell", increment: 2.5, group: "legs", e1rm: true },
     goblet_squat: { name: "Goblet squat", fields: ["kg", "reps"], load: "dumbbell", increment: 2, group: "legs", e1rm: true },
@@ -147,8 +150,8 @@ export const PROGRAM = {
         { key: "back_squat", sets: 4, reps: "5", repsMin: 5, repsMax: 5, note: "2 reps in reserve. Start around 75 kg", startKg: 75 },
         { key: "db_bench", sets: 4, reps: "6 to 8", repsMin: 6, repsMax: 8 },
         { key: "db_single_leg_rdl", sets: 3, reps: "8 per leg", repsMin: 8, repsMax: 8, note: "Slow, hips square" },
-        { key: "pull_up", sets: 4, reps: "as many as you can minus 1", amrap: true, note: "Add weight once you reach 10" },
-        { key: "copenhagen_plank", sets: 3, reps: "20 s per side", seconds: 20, note: "Adductors, good for knees and cutting" },
+        { key: "band_pull_up", sets: 4, reps: "as many as you can minus 1", amrap: true, note: "Light band. At 10 reps move to a thinner band, then no band" },
+        { key: "adductor_machine", sets: 3, reps: "12", repsMin: 12, repsMax: 12, note: "Adductors without bodyweight through the knee. No machine: replace with the lying ball squeeze, 3 × 20 s" },
         { key: "suitcase_march", sets: 3, reps: "40 s per side", seconds: 40, note: "For the lower back. Heavy DB in one hand, knees up slowly, don't lean" },
       ],
     },

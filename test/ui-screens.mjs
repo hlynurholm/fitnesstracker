@@ -46,8 +46,8 @@ const benchBlock = p.locator('.exercise[data-key="db_bench"]');
 await benchBlock.locator(".note-toggle").click();
 await benchBlock.locator("textarea").fill("Right shoulder clicked on set 2");
 // Countdown on a timed set: 2 seconds, then the set is ticked automatically
-const plank = p.locator('.exercise[data-key="copenhagen_plank"]');
-await plank.locator(".set-row").first().locator("input").fill("2");
+const plank = p.locator('.exercise[data-key="suitcase_march"]');
+await plank.locator(".set-row").first().locator("input").nth(1).fill("2");
 await plank.locator(".set-row").first().locator(".count-btn").click();
 await p.waitForTimeout(3200);
 if (!(await plank.locator(".set-row").first().locator(".tick").evaluate((el) => el.classList.contains("done")))) errors.push("countdown did not tick the set");
@@ -78,7 +78,7 @@ if (kg0 !== "30" || kg1 !== "30" || reps1 !== "8" || kg2 !== "32.5") errors.push
 if (!done0 || done1 || done2) errors.push("tick state wrong after untick/draft");
 const noteBack = await p.locator('.exercise[data-key="db_bench"] textarea').inputValue();
 if (!/shoulder/.test(noteBack)) errors.push("exercise note did not persist: " + noteBack);
-const plankBack = await p.locator('.exercise[data-key="copenhagen_plank"] .set-row').first().locator("input").inputValue();
+const plankBack = await p.locator('.exercise[data-key="suitcase_march"] .set-row').first().locator("input").nth(1).inputValue();
 if (plankBack !== "2") errors.push("countdown value did not persist: " + plankBack);
 await p.screenshot({ path: `${out}/phone-today-logged.png`, fullPage: false });
 

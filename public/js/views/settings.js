@@ -12,7 +12,7 @@ export async function renderSettings(container) {
   const form = h("div", { class: "card" });
   const start = h("input", { type: "date", value: s.program_start_date || PROGRAM.startDateDefault });
   const phase = h("select", null, [["", "Follow the plan (weeks 1 to 2, 3 to 6, 7+)"], ["1", "Phase 1: Tune-up"], ["2", "Phase 2: Power"], ["3", "Phase 3: Reactive"]].map(([v, l]) => h("option", { value: v, selected: String(s.phase_override || "") === v }, l)));
-  const goal = h("input", { type: "number", step: "0.5", value: s.goal_weight_kg || PROGRAM.body.goalWeightKg });
+  const goal = h("input", { type: "text", inputmode: "decimal", pattern: "[0-9]*[.,]?[0-9]*", value: s.goal_weight_kg || PROGRAM.body.goalWeightKg });
   const kcal = h("input", { type: "number", step: "10", value: s.calorie_target || PROGRAM.nutrition.calories });
   const prot = h("input", { type: "number", step: "5", value: s.protein_target || PROGRAM.nutrition.proteinG });
   const fun = h("input", { type: "number", step: "50", value: s.fun_budget_kcal || PROGRAM.nutrition.funBudgetWeekKcal });
@@ -31,7 +31,7 @@ export async function renderSettings(container) {
     h("label", { class: "field" }, h("span", null, "5 km target (mm:ss)"), fiveK)));
   form.appendChild(h("button", { class: "btn primary", onClick: async () => {
     try {
-      const body = { program_start_date: start.value, phase_override: phase.value || null, goal_weight_kg: goal.value, calorie_target: kcal.value, protein_target: prot.value, fun_budget_kcal: fun.value, max_hr: maxHr.value, five_k_target_sec: parseTime(fiveK.value) };
+      const body = { program_start_date: start.value, phase_override: phase.value || null, goal_weight_kg: String(goal.value).trim().replace(",", "."), calorie_target: kcal.value, protein_target: prot.value, fun_budget_kcal: fun.value, max_hr: maxHr.value, five_k_target_sec: parseTime(fiveK.value) };
       state.settings = await api.put("/api/settings", body);
       store.set("ft_settings", state.settings);
       toast("Settings saved");

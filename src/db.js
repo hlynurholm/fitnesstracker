@@ -69,7 +69,7 @@ export const WORKOUT_FIELDS = ["status", "notes", "distance_km", "time_sec", "av
 
 export function num(v) {
   if (v === "" || v === null || v === undefined) return null;
-  const n = Number(v);
+  const n = Number(typeof v === "string" ? v.trim().replace(",", ".") : v);
   return isNaN(n) ? null : n;
 }
 

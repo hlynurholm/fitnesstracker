@@ -175,3 +175,13 @@ test("Program schedule", () => {
   assert.equal(parseTime("25:37"), 1537);
   assert.equal(fmtTime(1380), "23:00");
 });
+
+test("typed numbers accept a comma as the decimal separator", async () => {
+  const { toNum } = await import("../public/js/util.js");
+  assert.equal(toNum("22,5"), 22.5);
+  assert.equal(toNum("22.5"), 22.5);
+  assert.equal(toNum(" 80 "), 80);
+  assert.equal(toNum(""), null);
+  assert.equal(toNum("abc"), null);
+  assert.equal(toNum(null), null);
+});

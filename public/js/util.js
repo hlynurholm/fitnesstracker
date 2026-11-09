@@ -45,6 +45,14 @@ export function fmtDateTime(iso) {
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 export function fmtKg(v) { return v == null ? "" : (Math.round(v * 100) / 100).toString(); }
+// Parses a typed number. Accepts a comma as the decimal separator (Icelandic keyboards offer only a comma). Empty or junk gives null.
+export function toNum(v) {
+  if (v == null) return null;
+  const s = String(v).trim().replace(",", ".");
+  if (s === "") return null;
+  const n = Number(s);
+  return isNaN(n) ? null : n;
+}
 export function fmtNum(v, digits = 0) { return v == null || isNaN(v) ? "" : Number(v).toFixed(digits); }
 
 export function uuid() {

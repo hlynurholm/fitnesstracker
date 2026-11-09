@@ -1,12 +1,12 @@
 // Today / day view: the logging screen.
 import { api, queuedWrite } from "../api.js";
-import { h, clear, toast, modal, fmtDay, fmtShort, uuid, debounce, store, secondsToHms, fmtKg } from "../util.js";
+import { h, clear, toast, modal, fmtDay, fmtShort, uuid, debounce, store, secondsToHms, fmtKg, toNum } from "../util.js";
 import { PROGRAM, templateFor, exerciseFor, addDays, mondayOf, todayLocal, e1rm, fmtTime, parseTime, fmtPace, WEEKDAYS } from "../program.js";
 import { state } from "../app.js";
 import { PICKABLE } from "./calendar.js";
 
 const FIELD_META = {
-  kg: { label: "kg", attrs: { type: "number", inputmode: "decimal", step: "0.5", min: "0" } },
+  kg: { label: "kg", attrs: { type: "text", inputmode: "decimal", pattern: "[0-9]*[.,]?[0-9]*", autocomplete: "off" } },
   reps: { label: "reps", attrs: { type: "number", inputmode: "numeric", step: "1", min: "0" } },
   seconds: { label: "sec", attrs: { type: "number", inputmode: "numeric", step: "5", min: "0" } },
   meters: { label: "m", attrs: { type: "number", inputmode: "numeric", step: "5", min: "0" } },
@@ -242,9 +242,9 @@ class DayView {
   }
 
   bodyWeightCard() {
-    const input = h("input", { type: "number", inputmode: "decimal", step: "0.1", min: "30", max: "300", placeholder: "kg", value: this.data.body && this.data.body.weight_kg != null ? this.data.body.weight_kg : "", style: { maxWidth: "104px", textAlign: "center" } });
+    const input = h("input", { type: "text", inputmode: "decimal", pattern: "[0-9]*[.,]?[0-9]*", autocomplete: "off", placeholder: "kg", value: this.data.body && this.data.body.weight_kg != null ? this.data.body.weight_kg : "", style: { maxWidth: "104px", textAlign: "center" } });
     const save = async () => {
-      const v = input.value === "" ? null : Number(input.value);
+      const v = toNum(input.value);
       const r = await queuedWrite("PUT", "/api/body", { date: this.date, weight_kg: v }, `body:${this.date}`);
       if (r.ok) { toast(v == null ? "Weigh-in removed" : "Weight saved"); this.data.body = v == null ? null : { date: this.date, weight_kg: v }; store.set(`ft_day_${this.date}`, this.data); }
     };
@@ -464,7 +464,7 @@ class DayView {
     const rowEl = h("div", { class: "set-grid set-row" + (fields.length === 1 ? " one-field" : "") }, h("span", { class: "set-no" }, String(i + 1)));
     for (const f of fields) {
       const inp = h("input", { ...FIELD_META[f].attrs, value: row[f] ?? "", placeholder: String(this.placeholderFor(ex, e, rows, i, f)), class: row[f] != null ? "filled" : "", "aria-label": FIELD_META[f].label });
-      inp.addEventListener("input", () => { row[f] = inp.value === "" ? null : Number(inp.value); inp.classList.toggle("filled", row[f] != null); save(); });
+      inp.addEventListener("input", () => { row[f] = toNum(inp.value); inp.classList.toggle("filled", row[f] != null); save(); });
       inp.addEventListener("focus", () => inp.select());
       inputs[f] = inp;
       const cell = h("div", { class: "cell" + (f === "seconds" ? " has-count" : "") }, inp);
@@ -614,17 +614,17 @@ class DayView {
       const target = Number(state.settings.five_k_target_sec) || PROGRAM.running.fiveKTargetSec;
       card.appendChild(h("div", { class: "banner info" }, `Target by week 16: under ${fmtTime(target)} (${fmtPace(target / 5)}), stretch ${fmtTime(PROGRAM.running.fiveKStretchSec)}. Starting point ${PROGRAM.running.baselineNote}.`));
     }
-    const dist = h("input", { type: "number", inputmode: "decimal", step: "0.01", min: "0", placeholder: t.timeTrial ? "5.00" : "km", value: w.distance_km ?? "" });
+    const dist = h("input", { type: "text", inputmode: "decimal", pattern: "[0-9]*[.,]?[0-9]*", autocomplete: "off", placeholder: t.timeTrial ? "5.00" : "km", value: w.distance_km ?? "" });
     const time = h("input", { type: "text", inputmode: "numeric", placeholder: "mm:ss", value: w.time_sec ? fmtTime(w.time_sec) : "" });
     const hr = h("input", { type: "number", inputmode: "numeric", placeholder: "bpm", value: w.avg_hr ?? "" });
     const pace = h("div", { class: "muted small", style: { minHeight: "1.2em", marginTop: ".4rem" } });
     const updatePace = () => {
-      const d = Number(dist.value), s = parseTime(time.value);
+      const d = toNum(dist.value), s = parseTime(time.value);
       pace.textContent = d > 0 && s ? `Pace ${fmtPace(s / d)}` : "";
     };
     updatePace();
     const saveFields = debounce(async () => {
-      const body = { distance_km: dist.value === "" ? null : Number(dist.value), time_sec: parseTime(time.value), avg_hr: hr.value === "" ? null : Number(hr.value) };
+      const body = { distance_km: toNum(dist.value), time_sec: parseTime(time.value), avg_hr: toNum(hr.value) };
       await this.saveWorkout(body);
       updatePace();
       this.updateStatusBadge();
@@ -696,9 +696,9 @@ class DayView {
     const grid = h("div", { class: "inline-fields" });
     for (const def of PROGRAM.tests) {
       const existing = byKey[def.key];
-      const inp = h("input", def.input === "time" ? { type: "text", inputmode: "numeric", placeholder: "mm:ss", value: existing ? fmtTime(existing.value) : "" } : { type: "number", inputmode: "decimal", step: def.step || "1", placeholder: def.unit, value: existing ? existing.value : "" });
+      const inp = h("input", def.input === "time" ? { type: "text", inputmode: "numeric", placeholder: "mm:ss", value: existing ? fmtTime(existing.value) : "" } : { type: "text", inputmode: "decimal", pattern: "[0-9]*[.,]?[0-9]*", autocomplete: "off", placeholder: def.unit, value: existing ? existing.value : "" });
       inp.addEventListener("change", async () => {
-        const value = def.input === "time" ? parseTime(inp.value) : inp.value === "" ? null : Number(inp.value);
+        const value = def.input === "time" ? parseTime(inp.value) : toNum(inp.value);
         const date = existing ? existing.date : this.date;
         const r = await queuedWrite("PUT", "/api/tests", { date, test_key: def.key, value }, `test:${date}:${def.key}`);
         if (r.ok) toast("Test saved");

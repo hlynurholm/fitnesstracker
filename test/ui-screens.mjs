@@ -60,7 +60,7 @@ await bench.locator(".tick").click();
 // Tick the second set with empty fields: should take placeholders from the first set.
 await p.locator('.exercise[data-key="db_bench"] .set-row').nth(1).locator(".tick").click();
 // Third set: type a value but do not tick (draft), then untick the second set.
-await p.locator('.exercise[data-key="db_bench"] .set-row').nth(2).locator("input").nth(0).fill("32.5");
+await p.locator('.exercise[data-key="db_bench"] .set-row').nth(2).locator("input").nth(0).fill("32,5"); // comma, as on an Icelandic number pad
 await p.locator('.exercise[data-key="db_bench"] .set-row').nth(1).locator(".tick").click();
 await p.waitForTimeout(1500);
 await p.reload();

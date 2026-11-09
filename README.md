@@ -142,6 +142,28 @@ All calls take `Authorization: Bearer <API_TOKEN>`.
 
 ## Sample data
 
+## Fetching the data from a Claude thread
+
+Nothing needs copying out of the app. Every read endpoint accepts the API token as a bearer header, so a script can pull the whole dataset:
+
+```bash
+FITNESS_API_TOKEN=<the API_TOKEN Worker secret> scripts/fetch-data.sh fitness-data
+```
+
+That writes `summary.md` (the same text as "Copy summary for Claude"), `export.json` (every table), `diet.json`, `uploads.json` and the original Garmin and MyFitnessPal files under `garmin/`. The raw files are kept gzip-compressed in D1 at upload time, so nothing is lost. `FITNESS_APP_URL` overrides the base URL (local dev: `http://127.0.0.1:8787`), `FITNESS_RAW=0` skips the raw files. Exit codes: 2 no token, 3 network, 4 token rejected.
+
+The calls behind it, all `GET` with `Authorization: Bearer <token>`:
+
+| Call | Returns |
+| --- | --- |
+| `/api/summary.md` | Markdown summary |
+| `/api/export.json` | Every table as JSON; `?include=raw` adds the files base64 encoded |
+| `/api/diet?days=120` | Diet feed |
+| `/api/uploads` | Uploaded files with workout date and template |
+| `/api/uploads/<id>/raw` | The original file (404 when none was kept) |
+
+For a Claude cloud thread to run this, the cloud environment needs the app host allowed in its network settings and the token stored as the `FITNESS_API_TOKEN` environment variable. The token also allows writes (it is the same token the reports API uses), so treat it like a password.
+
 To restart the program from another Monday, run the "Program start" workflow from the Actions tab with the date (YYYY-MM-DD). It only changes the `program_start_date` setting in the live database; logged history stays and shows under "Before the plan". Leave the date empty to clear the setting so the default in `public/js/program.js` applies. Tick "reset_run_target" to also clear a saved 5 km target. The same date can be set on the Settings page in the app.
 
 To see the app populated, run the "Sample data" workflow from the Actions tab with `add`. It loads six weeks of made-up history (lifts with sets, runs with Garmin-style activities, morning weights, nutrition days, week 1 tests, a report) dated before the real program start and moves the program start date back six weeks so they show as weeks 1 to 6. Run the same workflow with `remove` to delete every sample row and restore the start date. Locally: `node scripts/sample-data.mjs add > sample.sql && npx wrangler d1 execute fitness-tracker-db --local --file sample.sql`.

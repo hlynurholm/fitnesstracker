@@ -20,8 +20,8 @@ export const PROGRAM = {
       { when: "Anywhere", what: "Fruit, milk, a bit of bread", kcal: 150, protein: 25 },
     ],
   },
-  // Reset at the 9 Nov 2026 restart from the 29 Oct run (3.5 km in 23:42, about 34:00 for 5 km). Was 23:00 / 22:00 with a 25:37 PB.
-  running: { fiveKTargetSec: 28 * 60, fiveKStretchSec: 26 * 60, fiveKBaselineSec: 34 * 60, baselineNote: "about 34:00 (3.5 km in 23:42 on 29 Oct 2026)", paceNote: "Every 2 weeks, 5 s/km faster if the last rep felt controlled." },
+  // Reset at the 9 Nov 2026 restart from the 29 Oct run (3.5 km in 23:42 with walks, about 31 to 32 min for an even 5 km). Was 23:00 / 22:00 with a 25:37 PB.
+  running: { fiveKTargetSec: 28 * 60, fiveKStretchSec: 26 * 60, fiveKBaselineSec: 31 * 60 + 30, baselineNote: "about 31 to 32 min evenly paced (3.5 km in 23:42 with walks on 29 Oct 2026)", paceNote: "Every 2 weeks, 5 s/km faster if the last rep felt controlled.", cadenceNote: "Aim for 160 to 165 steps per minute (you averaged 146). Shorter, quicker steps." },
   // Heart rate zones from the 27 Oct 2026 bike test (max about 188, threshold about 172).
   heartRate: { maxBpm: 188, thresholdBpm: 172, zones: [
     { name: "Easy", from: 130, to: 148, note: "Thursday runs" },
@@ -194,31 +194,31 @@ export const PROGRAM = {
       finisher: { title: "Conditioning finisher", text: "8 rounds of 20 s all out and 40 s easy on a bike or rower. Swap in kettlebell swings if those are free.", minutes: 8 },
     },
     intervals_6x2: {
-      key: "intervals_6x2", name: "Intervals", kind: "run", subtitle: "6 × 2 min at 6:30/km, 2 min walk", duration: "30 to 45 min",
-      detail: "After a 10 min easy jog, run 6 × 2 min at 6:30/km with 2 min walk between. Heart rate around 165 to 180 by the end of each rep. Hard means talking is difficult but you can keep the pace steady across every rep. Every 2 weeks, 5 s/km faster if the last rep felt controlled.",
-      pace: "6:30/km",
+      key: "intervals_6x2", name: "Intervals", kind: "run", subtitle: "6 × 2 min at 5:50/km, 2 min walk", duration: "30 to 45 min",
+      detail: "After a 10 min easy jog, run 6 × 2 min at 5:50/km with 2 min walk between. Heart rate around 165 to 180 by the end of each rep. Hard means talking is difficult but you can keep the pace steady across every rep. Every 2 weeks, 5 s/km faster if the last rep felt controlled.",
+      pace: "5:50/km",
       intervals: { reps: 6, workSec: 120, restSec: 120 },
     },
     intervals_5x3: {
-      key: "intervals_5x3", name: "Intervals", kind: "run", subtitle: "5 × 3 min at 6:15/km, 2 min easy jog", duration: "30 to 45 min",
-      detail: "After a 10 min easy jog, run 5 × 3 min at 6:15/km with 2 min easy jog between. Heart rate around 165 to 180 by the end of each rep. Keep the pace steady across every rep. Every 2 weeks, 5 s/km faster if the last rep felt controlled.",
-      pace: "6:15/km",
+      key: "intervals_5x3", name: "Intervals", kind: "run", subtitle: "5 × 3 min at 5:40/km, 2 min easy jog", duration: "30 to 45 min",
+      detail: "After a 10 min easy jog, run 5 × 3 min at 5:40/km with 2 min easy jog between. Heart rate around 165 to 180 by the end of each rep. Keep the pace steady across every rep. Every 2 weeks, 5 s/km faster if the last rep felt controlled.",
+      pace: "5:40/km",
       intervals: { reps: 5, workSec: 180, restSec: 120 },
     },
     intervals_4x4: {
-      key: "intervals_4x4", name: "Intervals", kind: "run", subtitle: "4 × 4 min at 6:00/km, 3 min easy jog", duration: "30 to 45 min",
-      detail: "After a 10 min easy jog, run the classic Norwegian 4 × 4: 4 min at 6:00/km, 3 min easy jog, four times. Heart rate around 165 to 180 by the end of each rep. Keep the pace steady across every rep. Every 2 weeks, 5 s/km faster if the last rep felt controlled.",
-      pace: "6:00/km",
+      key: "intervals_4x4", name: "Intervals", kind: "run", subtitle: "4 × 4 min at 5:30/km, 3 min easy jog", duration: "30 to 45 min",
+      detail: "After a 10 min easy jog, run the classic Norwegian 4 × 4: 4 min at 5:30/km, 3 min easy jog, four times. Heart rate around 165 to 180 by the end of each rep. Keep the pace steady across every rep. Every 2 weeks, 5 s/km faster if the last rep felt controlled.",
+      pace: "5:30/km",
       intervals: { reps: 4, workSec: 240, restSec: 180 },
     },
     time_trial_5k: {
       key: "time_trial_5k", name: "5 km time trial", kind: "run", subtitle: "Timed 5 km, flat out", duration: "30 to 40 min",
-      detail: "Warm up 10 min easy, then run 5 km as fast as you can hold evenly. Log the time here. Target by week 16: under 28:00 (5:36 per km), stretch 26:00. Starting point: about 34:00 (3.5 km in 23:42 on 29 Oct).",
+      detail: "Warm up 10 min easy, then run 5 km as fast as you can hold evenly. Run the first km no faster than target pace. Log the time here. Target by week 16: under 28:00 (5:36 per km), stretch 26:00. Starting point: about 31 to 32 min evenly paced (3.5 km in 23:42 with walks on 29 Oct).",
       timeTrial: true,
     },
     easy_run: {
       key: "easy_run", name: "Easy zone 2 run", kind: "run", subtitle: "30 to 40 min, heart rate under 148", duration: "30 to 40 min",
-      detail: "30 to 40 min with heart rate under 148, probably around 7:30 to 8:15 per km. Go by heart rate, not pace. You should be able to talk in full sentences. It will feel embarrassingly slow. That is correct, and it is what makes the hard sessions and padel feel easy.",
+      detail: "30 to 40 min with heart rate under 148, probably around 7:00 to 7:45 per km. Go by heart rate, not pace. You should be able to talk in full sentences. It will feel embarrassingly slow. That is correct, and it is what makes the hard sessions and padel feel easy.",
       weeks1to3: "Weeks 1 to 3: run 4 min, walk 1 min, and repeat for the whole session. Continuous from week 4.",
       fromWeek3: "From week 3, end it with 4 to 6 × 20 m sprints outdoors, walking back between them. That covers the sprinting the gym has no room for.",
       easy: true,

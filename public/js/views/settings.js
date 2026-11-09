@@ -16,7 +16,7 @@ export async function renderSettings(container) {
   const kcal = h("input", { type: "number", step: "10", value: s.calorie_target || PROGRAM.nutrition.calories });
   const prot = h("input", { type: "number", step: "5", value: s.protein_target || PROGRAM.nutrition.proteinG });
   const fun = h("input", { type: "number", step: "50", value: s.fun_budget_kcal || PROGRAM.nutrition.funBudgetWeekKcal });
-  const maxHr = h("input", { type: "number", step: "1", value: s.max_hr || 190 });
+  const maxHr = h("input", { type: "number", step: "1", value: s.max_hr || PROGRAM.heartRate.maxBpm });
   const fiveK = h("input", { type: "text", value: fmtTime(Number(s.five_k_target_sec) || PROGRAM.running.fiveKTargetSec) });
   form.appendChild(h("h3", null, "Plan"));
   form.appendChild(h("label", { class: "field" }, h("span", null, "Week 1 starts on (Monday)"), start));

@@ -603,7 +603,11 @@ class DayView {
     if (t.detail) card.appendChild(h("p", { style: { marginTop: ".4rem" } }, t.detail));
     if (t.intervals) {
       const iv = t.intervals;
-      card.appendChild(h("div", { class: "banner info" }, `10 min easy jog, then ${iv.reps} × ${iv.workSec / 60} min hard with ${iv.restSec / 60} min easy between, then a few minutes easy. Pace steady across every rep.`));
+      card.appendChild(h("div", { class: "banner info" }, `10 min easy jog, then ${iv.reps} × ${iv.workSec / 60} min${t.pace ? ` at ${t.pace}` : " hard"} with ${iv.restSec / 60} min easy between, then a few minutes easy. Heart rate 165 to 180 by the end of each rep.`));
+    }
+    if (t.easy) card.appendChild(h("div", { class: "banner info" }, `Keep heart rate under ${PROGRAM.heartRate.zones[0].to}. Pace is a guide only.`));
+    if (t.kind === "run" && PROGRAM.heartRate) {
+      card.appendChild(h("div", { class: "muted small", style: { marginTop: ".4rem" } }, "Zones: " + PROGRAM.heartRate.zones.map((z) => `${z.name} ${z.from} to ${z.to}`).join(" · ") + ` (max ${PROGRAM.heartRate.maxBpm}, threshold ${PROGRAM.heartRate.thresholdBpm})`));
     }
     if (t.timeTrial) {
       const target = Number(state.settings.five_k_target_sec) || PROGRAM.running.fiveKTargetSec;

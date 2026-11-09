@@ -524,7 +524,7 @@ async function handleUpload(request, env, settings) {
   const dateHint = form.get("date") ? assertDate(form.get("date")) : null;
   const sourceHint = form.get("source") || null;
   const tz = num(form.get("tz_offset_min"));
-  const maxHr = num(settings.max_hr) || 190;
+  const maxHr = num(settings.max_hr) || PROGRAM.heartRate.maxBpm;
   const results = [];
   for (const f of files) {
     const bytes = new Uint8Array(await f.arrayBuffer());

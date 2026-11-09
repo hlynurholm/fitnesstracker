@@ -607,7 +607,7 @@ class DayView {
     }
     if (t.timeTrial) {
       const target = Number(state.settings.five_k_target_sec) || PROGRAM.running.fiveKTargetSec;
-      card.appendChild(h("div", { class: "banner info" }, `Target by week 16: under ${fmtTime(target)} (${fmtPace(target / 5)}). PB ${fmtTime(PROGRAM.running.fiveKPbSec)}. Under 25:00 today means the target moves to 22:00.`));
+      card.appendChild(h("div", { class: "banner info" }, `Target by week 16: under ${fmtTime(target)} (${fmtPace(target / 5)}), stretch ${fmtTime(PROGRAM.running.fiveKStretchSec)}. Starting point ${PROGRAM.running.baselineNote}.`));
     }
     const dist = h("input", { type: "number", inputmode: "decimal", step: "0.01", min: "0", placeholder: t.timeTrial ? "5.00" : "km", value: w.distance_km ?? "" });
     const time = h("input", { type: "text", inputmode: "numeric", placeholder: "mm:ss", value: w.time_sec ? fmtTime(w.time_sec) : "" });

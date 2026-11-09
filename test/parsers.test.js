@@ -157,19 +157,20 @@ test("Unknown CSV is stored raw", () => {
 });
 
 test("Program schedule", () => {
-  assert.equal(resolveDay("2026-10-26").templateKey, "lift_a");
-  assert.equal(resolveDay("2026-10-27").templateKey, "time_trial_5k");
-  assert.equal(resolveDay("2026-11-03").templateKey, "intervals_6x2");
-  assert.equal(resolveDay("2026-11-24").templateKey, "intervals_5x3");
-  assert.equal(resolveDay("2026-12-15").templateKey, "time_trial_5k");
-  assert.equal(resolveDay("2027-01-05").templateKey, "intervals_4x4");
-  assert.equal(resolveDay("2026-12-01").deload, true);
-  assert.equal(resolveDay("2026-12-01").plan.length, 0);
-  assert.equal(resolveDay("2026-12-02").plan[0].sets, 2); // deload halves 4 -> 2
+  // Default start 2026-11-09 (restart). Week 1 Tuesday is intervals; the first time trial is week 8.
+  assert.equal(resolveDay("2026-11-09").templateKey, "lift_a");
+  assert.equal(resolveDay("2026-11-10").templateKey, "intervals_6x2");
+  assert.equal(resolveDay("2026-11-17").templateKey, "intervals_6x2");
+  assert.equal(resolveDay("2026-12-08").templateKey, "intervals_5x3");
+  assert.equal(resolveDay("2026-12-29").templateKey, "time_trial_5k");
+  assert.equal(resolveDay("2027-01-19").templateKey, "intervals_4x4");
+  assert.equal(resolveDay("2026-12-15").deload, true);
+  assert.equal(resolveDay("2026-12-15").plan.length, 0);
+  assert.equal(resolveDay("2026-12-16").plan[0].sets, 2); // deload halves 4 -> 2
   assert.equal(weekNumber("2026-10-25", "2026-10-26"), 0);
-  assert.equal(resolveDay("2026-10-26").phase, 1);
-  assert.equal(resolveDay("2026-11-09").phase, 2);
-  assert.equal(resolveDay("2026-12-07").phase, 3);
+  assert.equal(resolveDay("2026-11-09").phase, 1);
+  assert.equal(resolveDay("2026-11-23").phase, 2);
+  assert.equal(resolveDay("2026-12-21").phase, 3);
   assert.equal(Math.round(e1rm(100, 5)), 117);
   assert.equal(parseTime("25:37"), 1537);
   assert.equal(fmtTime(1380), "23:00");

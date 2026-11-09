@@ -9,6 +9,7 @@ export async function buildSummaryMarkdown(env, settings, date) {
   const q = async (sql, ...binds) => (await env.DB.prepare(sql).bind(...binds).all()).results;
   const today = resolveDay(date, settings);
   const start = settings.program_start_date;
+  const wkLabel = (wk) => (wk >= 1 ? String(wk) : "pre"); // logged before the (re)start
   const workouts = await q("SELECT * FROM workouts ORDER BY date, id");
   const sets = await q("SELECT s.*, w.date FROM sets s JOIN workouts w ON w.id = s.workout_id WHERE s.done = 1 ORDER BY w.date, s.workout_id, s.exercise_key, s.set_index");
   const body = await q("SELECT * FROM body_metrics ORDER BY date");
@@ -32,7 +33,7 @@ export async function buildSummaryMarkdown(env, settings, date) {
     const byWeek = new Map();
     for (const b of manual) { const wk = weekNumber(b.date, start); const arr = byWeek.get(wk) || []; arr.push(b.weight_kg); byWeek.set(wk, arr); }
     lines.push(`| Week | Avg kg | Weigh-ins |`); lines.push(`| --- | --- | --- |`);
-    for (const [wk, arr] of [...byWeek.entries()].sort((a, b) => a[0] - b[0])) lines.push(`| ${wk} | ${r1(avg(arr))} | ${arr.length} |`);
+    for (const [wk, arr] of [...byWeek.entries()].sort((a, b) => a[0] - b[0])) lines.push(`| ${wkLabel(wk)} | ${r1(avg(arr))} | ${arr.length} |`);
     const last = manual[manual.length - 1];
     lines.push(``);
     lines.push(`Latest: ${last.weight_kg} kg on ${last.date}. First logged: ${manual[0].weight_kg} kg on ${manual[0].date}.`);
@@ -48,7 +49,7 @@ export async function buildSummaryMarkdown(env, settings, date) {
     for (const w of done) { const wk = weekNumber(w.date, start); const arr = weeks.get(wk) || []; arr.push(w); weeks.set(wk, arr); }
     lines.push(`| Week | Done | Sessions |`); lines.push(`| --- | --- | --- |`);
     for (const [wk, arr] of [...weeks.entries()].sort((a, b) => a[0] - b[0])) {
-      lines.push(`| ${wk} | ${arr.length} of 5 | ${arr.map((w) => `${w.date.slice(5)} ${templateFor(w.template_key).name}${w.rpe ? ` (RPE ${w.rpe})` : ""}`).join(", ")} |`);
+      lines.push(`| ${wkLabel(wk)} | ${arr.length} of 5 | ${arr.map((w) => `${w.date.slice(5)} ${templateFor(w.template_key).name}${w.rpe ? ` (RPE ${w.rpe})` : ""}`).join(", ")} |`);
     }
   }
   lines.push(``);
@@ -97,7 +98,7 @@ export async function buildSummaryMarkdown(env, settings, date) {
 
   // Tests
   lines.push(`## Performance tests`);
-  if (!tests.length) lines.push(`No tests logged yet (planned for weeks 1, 8 and 16).`);
+  if (!tests.length) lines.push(`No tests logged yet (planned for weeks 8 and 16).`);
   else {
     lines.push(`| Date | Week | Test | Value |`); lines.push(`| --- | --- | --- | --- |`);
     for (const t of tests) {
@@ -126,7 +127,7 @@ export async function buildSummaryMarkdown(env, settings, date) {
     for (const n of nutrition) { const wk = weekNumber(n.date, start); const arr = byWeek.get(wk) || []; arr.push(n); byWeek.set(wk, arr); }
     lines.push(`| Week | Days | Avg kcal | Avg protein g | Avg carbs g | Avg fat g | Avg sugar g |`); lines.push(`| --- | --- | --- | --- | --- | --- | --- |`);
     for (const [wk, arr] of [...byWeek.entries()].sort((a, b) => a[0] - b[0])) {
-      lines.push(`| ${wk} | ${arr.length} | ${r0(avg(arr.map((n) => n.calories)))} | ${r0(avg(arr.map((n) => n.protein_g)))} | ${r0(avg(arr.map((n) => n.carbs_g)))} | ${r0(avg(arr.map((n) => n.fat_g)))} | ${r0(avg(arr.map((n) => n.sugar_g)))} |`);
+      lines.push(`| ${wkLabel(wk)} | ${arr.length} | ${r0(avg(arr.map((n) => n.calories)))} | ${r0(avg(arr.map((n) => n.protein_g)))} | ${r0(avg(arr.map((n) => n.carbs_g)))} | ${r0(avg(arr.map((n) => n.fat_g)))} | ${r0(avg(arr.map((n) => n.sugar_g)))} |`);
     }
   }
   lines.push(``);

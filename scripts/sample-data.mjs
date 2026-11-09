@@ -12,7 +12,7 @@
 import { PROGRAM, buildPlan, scheduledTemplateKey, addDays, isDeloadWeek } from "../public/js/program.js";
 
 const SAMPLE_WEEKS = 6;
-const REAL_START = PROGRAM.startDateDefault; // 2026-10-26
+const REAL_START = PROGRAM.startDateDefault;
 const SAMPLE_START = addDays(REAL_START, -7 * SAMPLE_WEEKS); // 2026-09-14
 const SAMPLE_END = addDays(REAL_START, -1); // 2026-10-25
 const action = process.argv[2] || "add";

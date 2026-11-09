@@ -142,6 +142,8 @@ All calls take `Authorization: Bearer <API_TOKEN>`.
 
 ## Sample data
 
+To restart the program from another Monday, run the "Program start" workflow from the Actions tab with the date (YYYY-MM-DD). It only changes the `program_start_date` setting in the live database; logged history stays and shows under "Before the plan". Leave the date empty to clear the setting so the default in `public/js/program.js` applies. Tick "reset_run_target" to also clear a saved 5 km target. The same date can be set on the Settings page in the app.
+
 To see the app populated, run the "Sample data" workflow from the Actions tab with `add`. It loads six weeks of made-up history (lifts with sets, runs with Garmin-style activities, morning weights, nutrition days, week 1 tests, a report) dated before the real program start and moves the program start date back six weeks so they show as weeks 1 to 6. Run the same workflow with `remove` to delete every sample row and restore the start date. Locally: `node scripts/sample-data.mjs add > sample.sql && npx wrangler d1 execute fitness-tracker-db --local --file sample.sql`.
 
 ## Security notes

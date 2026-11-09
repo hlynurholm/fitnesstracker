@@ -284,7 +284,7 @@ function nutritionCard(m, d) {
 }
 
 function testsCard(d) {
-  const c = card("Performance tests", "weeks 1, 8 and 16");
+  const c = card("Performance tests", "weeks 8 and 16");
   if (!d.tests.length) { c.appendChild(empty("Test week numbers show up here: 5 km, broad jump, single leg hops, shuttle and 3RMs.")); return c; }
   const weeks = [...new Set(d.tests.map((t) => t.week_no))].sort((a, b) => a - b);
   const table = h("table", null, h("thead", null, h("tr", null, h("th", null, "Test"), weeks.map((w) => h("th", { class: "num" }, `Week ${w}`)))),

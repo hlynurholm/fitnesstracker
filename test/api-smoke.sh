@@ -21,10 +21,12 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -b "$JAR" "$BASE/"); check "root s
 # bearer token
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" "$BASE/api/settings"); check "bearer token works (200)" '[ "$code" = "200" ]'
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer nope" "$BASE/api/settings"); check "bad bearer rejected (401)" '[ "$code" = "401" ]'
-# program and day
+# program and day (pin the start date so the dates below are week 1 whatever the default is)
+j -X PUT -d '{"program_start_date":"2026-10-26"}' "$BASE/api/settings" >/dev/null
 out=$(j "$BASE/api/day/2026-10-26"); check "day: Monday 26 Oct is Lift A" '[[ "$out" == *"\"templateKey\":\"lift_a\""* ]]'
 check "day: plan has back squat" '[[ "$out" == *"back_squat"* ]]'
-out=$(j "$BASE/api/day/2026-10-27"); check "day: Tuesday week 1 is the 5k time trial" '[[ "$out" == *"time_trial_5k"* ]]'
+out=$(j "$BASE/api/day/2026-10-27"); check "day: Tuesday week 1 is intervals, no time trial" '[[ "$out" == *"intervals_6x2"* && "$out" != *"\"testWeek\":true"* ]]'
+out=$(j "$BASE/api/day/2026-12-15"); check "day: Tuesday week 8 is the 5k time trial" '[[ "$out" == *"time_trial_5k"* ]]'
 # log sets
 out=$(j -X PUT -d '{"date":"2026-10-26","template_key":"lift_a","exercise_key":"back_squat","set_index":0,"weight_kg":75,"reps":5}' "$BASE/api/sets/testset0001"); check "set upsert creates workout" '[[ "$out" == *"workout_id"* ]]'
 out=$(j -X PUT -d '{"date":"2026-10-26","template_key":"lift_a","exercise_key":"back_squat","set_index":0,"weight_kg":77.5,"reps":5}' "$BASE/api/sets/testset0001"); check "set upsert updates in place" '[[ "$out" == *"77.5"* ]]'
@@ -88,6 +90,7 @@ out=$(j "$BASE/api/diet"); check "diet endpoint has targets and the latest diet 
 # history list
 out=$(j "$BASE/api/workouts"); check "workouts list has volume" '[[ "$out" == *"volume_kg"* ]]'
 # settings
+out=$(j -X PUT -d '{"program_start_date":null}' "$BASE/api/settings"); check "clearing the start date restores the default" '[[ "$out" == *"\"program_start_date\":\"2026-11-09\""* ]]'
 out=$(j -X PUT -d '{"max_hr":"188"}' "$BASE/api/settings"); check "settings saved" '[[ "$out" == *"\"max_hr\":\"188\""* ]]'
 out=$(j -X PUT -d '{"bogus":"1"}' "$BASE/api/settings"); check "unknown setting rejected" '[[ "$out" == *"Unknown setting"* ]]'
 # delete set

@@ -177,6 +177,23 @@ struct HomeScreen: View {
             } label: {
                 Label("Range: \(setting.range.map { RangeOption.label($0) } ?? "default")", systemImage: "calendar")
             }
+            Menu {
+                Picker("Resolution", selection: Binding(get: { setting.resolution }, set: { days in withAnimation { model.update(setting.kind) { $0.resolution = days } } })) {
+                    Text("Auto").tag(Int?.none)
+                    ForEach(ResolutionOption.all) { Text($0.label).tag(Int?.some($0.days)) }
+                }
+            } label: {
+                Label("Resolution: \(ResolutionOption.label(setting.resolution))", systemImage: "chart.bar.xaxis")
+            }
+            Menu {
+                Picker("Chart", selection: Binding(get: { setting.chart }, set: { kind in withAnimation { model.update(setting.kind) { $0.chart = kind } } })) {
+                    Text("Default").tag(String?.none)
+                    Label("Bars", systemImage: "chart.bar.fill").tag(String?.some("bars"))
+                    Label("Line", systemImage: "chart.xyaxis.line").tag(String?.some("line"))
+                }
+            } label: {
+                Label("Chart: \(setting.chart ?? "default")", systemImage: setting.chart == "line" ? "chart.xyaxis.line" : "chart.bar.fill")
+            }
             if let days = setting.range {
                 Button { askApply = days } label: { Label("Use \(RangeOption.label(days)) for all widgets", systemImage: "square.on.square") }
             }
@@ -316,13 +333,13 @@ private struct MetricCard: View {
         let goal = latest.flatMap { l in spec.goalKey.flatMap { model.value($0, on: l.date) } }
         let sparse = kind == .bodyFat || kind == .leanMass // weighed now and then, so show a longer stretch
         let span = setting.range ?? (sparse ? (wide ? 120 : 60) : wide ? 30 : 14)
-        let chart = Spark(values: model.chart(span, wide: wide) { day in model.value(spec.key, on: day).map { $0 * spec.scale } }, style: spec.style, color: spec.tint, goal: goal.map { $0 * spec.scale }, height: wide ? 72 : 44)
+        let chart = Spark(values: model.chart(span, wide: wide, every: setting.resolution) { day in model.value(spec.key, on: day).map { $0 * spec.scale } }, style: setting.style ?? spec.style, color: spec.tint, goal: goal.map { $0 * spec.scale }, height: wide ? 72 : 44)
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: kind) {
                 if let latest, let goal, goal > 0 { ProgressRing(progress: latest.value / goal, color: spec.tint, size: 22) }
             }
-            if wide, span > 45, span <= HomeModel.dailyLimit(wide: true) {
-                // A long day-by-day chart needs the whole width of the widget, so it goes under the value.
+            if wide, chart.values.count > 45 {
+                // A chart with many points needs the whole width of the widget, so it goes under the value.
                 HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) { BigValue(value: latest.map { show($0.value) } ?? "–", unit: spec.unit); Caption(caption(latest, goal)) }
                 chart
             } else if wide {
@@ -383,11 +400,11 @@ private struct SleepCard: View {
         }
     }
     /// More nights than fit beside the value, each drawn on its own.
-    private var longDaily: Bool { wide && (setting.range ?? 14) > 45 && (setting.range ?? 14) <= HomeModel.dailyLimit(wide: true) }
+    private var longDaily: Bool { wide && model.chart(setting.range ?? 14, wide: wide, every: setting.resolution) { _ in nil }.count > 45 }
 
     /// Hours slept per night over the widget's range (weekly averages when there are too many nights to draw).
     private func nights(_ height: CGFloat) -> some View {
-        Spark(values: model.chart(setting.range ?? 14, wide: wide) { day in model.value("sleep.sleepTimeSeconds", on: day).map { $0 / 3600 } }, style: .bars, color: Theme.Palette.sleep, height: height)
+        Spark(values: model.chart(setting.range ?? 14, wide: wide, every: setting.resolution) { day in model.value("sleep.sleepTimeSeconds", on: day).map { $0 / 3600 } }, style: setting.style ?? .bars, color: Theme.Palette.sleep, height: height)
     }
 }
 
@@ -403,7 +420,7 @@ private struct IntensityCard: View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: .intensity) { ProgressRing(progress: week / max(goal, 1), color: CardKind.intensity.tint, size: 22) }
             BigValue(value: Fmt.whole(week), unit: "min")
-            Spark(values: model.chart(setting.range ?? (wide ? 30 : 14), wide: wide) { model.intensity(on: $0) }, style: .bars, color: CardKind.intensity.tint, height: wide ? 72 : 44)
+            Spark(values: model.chart(setting.range ?? (wide ? 30 : 14), wide: wide, every: setting.resolution) { model.intensity(on: $0) }, style: setting.style ?? .bars, color: CardKind.intensity.tint, height: wide ? 72 : 44)
             Caption("this week · goal \(Fmt.whole(goal))")
         }
     }
@@ -481,7 +498,7 @@ private struct WeightCard: View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: .weight)
             BigValue(value: avg.map { String(format: "%.1f", $0) } ?? "–", unit: "kg")
-            Spark(values: model.chart(setting.range ?? (wide ? 60 : 30), wide: wide) { byDay[$0] }, style: .line, color: CardKind.weight.tint, height: wide ? 72 : 44)
+            Spark(values: model.chart(setting.range ?? (wide ? 60 : 30), wide: wide, every: setting.resolution) { byDay[$0] }, style: setting.style ?? .line, color: CardKind.weight.tint, height: wide ? 72 : 44)
             Caption([recent.isEmpty ? latestDate.map { "last weighed \(Day.short($0))" } : "7-day avg", goal.flatMap { g in avg.map { String(format: "%.1f kg to goal", $0 - g) } }].compactMap { $0 }.joined(separator: " · "))
         }
     }
@@ -500,7 +517,7 @@ private struct NutritionCard: View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: .nutrition) { if let kcal = day?.calories, kcalTarget > 0 { ProgressRing(progress: kcal / kcalTarget, color: CardKind.nutrition.tint, size: 22) } }
             BigValue(value: Fmt.whole(day?.calories), unit: "kcal")
-            Spark(values: model.chart(setting.range ?? (wide ? 30 : 14), wide: wide) { date in byDay[date] }, style: .bars, color: CardKind.nutrition.tint, goal: kcalTarget > 0 ? kcalTarget : nil, height: wide ? 72 : 44)
+            Spark(values: model.chart(setting.range ?? (wide ? 30 : 14), wide: wide, every: setting.resolution) { date in byDay[date] }, style: setting.style ?? .bars, color: CardKind.nutrition.tint, goal: kcalTarget > 0 ? kcalTarget : nil, height: wide ? 72 : 44)
             Caption([day.flatMap { dayNote($0.date, today: model.today) }, kcalTarget > 0 ? "target \(Fmt.whole(kcalTarget))" : nil,
                      day?.protein_g.map { "protein \(Fmt.whole($0)) of \(Fmt.whole(proteinTarget)) g" }].compactMap { $0 }.joined(separator: " · "))
         }

@@ -52,9 +52,9 @@ the other tabs use. `HomeModel.swift` holds the widget list (`CardKind`), what e
   "use this range for all widgets" (asks twice), remove.
 - The grid button enters edit mode: drag a widget to move it, drag or tap the handle in its bottom right corner to
   resize it, tap the minus in its top left corner to remove it, and use the plus button to add widgets back.
-- Charts draw one value per day while there is room (45 days at half width, 3 months at full width) and weekly
-  averages beyond that. A range longer than the stored history asks the server once for
-  older Garmin data.
+- The same menu sets each widget's resolution (every day, 2 or 3 day, weekly, 2 week or monthly averages) and chart
+  type (bars or line). On auto, a chart draws every day while there is room (45 days at half width, 3 months at full
+  width) and weekly averages beyond that. A range longer than the stored history asks the server once for older data.
 - A widget with no data stays out of the grid until there is some. To add a widget for another metric, add a
   `CardKind` case and a `MetricSpec` entry. "Everything from your watch" lists every stored value.
 

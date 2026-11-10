@@ -237,8 +237,9 @@ struct Spark: View {
         Chart {
             ForEach(points, id: \.index) { p in
                 if style == .bars {
-                    BarMark(x: .value("Day", p.slot), y: .value("Value", p.value), width: .ratio(0.72))
-                        .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+                    // Many bars: fill the slot and drop the rounding, so thin bars read as one shape, not as dots.
+                    BarMark(x: .value("Day", p.slot), y: .value("Value", p.value), width: .ratio(values.count > 60 ? 0.9 : 0.72))
+                        .clipShape(RoundedRectangle(cornerRadius: values.count > 60 ? 0 : 2, style: .continuous))
                         .foregroundStyle(p.index == values.count - 1 ? color : color.opacity(Theme.ChartStyle.dimmedBarOpacity + 0.1))
                 } else {
                     AreaMark(x: .value("Day", p.slot), yStart: .value("Base", lo - pad), yEnd: .value("Value", p.value))

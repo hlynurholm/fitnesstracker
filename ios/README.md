@@ -16,6 +16,7 @@ The token is stored in the iOS Keychain on the phone. It is never written to the
 ```
 Shared/DesignSystem/Theme.swift       Colors, type, spacing, radii. Restyling starts here.
 Shared/DesignSystem/Components.swift  Card, Badge, Tile, Row, Banner, buttons, fields
+Shared/DesignSystem/Charts.swift      TrendChart, BarsChart, StatLine and the chart style tokens
 Shared/WorkoutActivityAttributes.swift  Live Activity payload (app and widget extension)
 Training/API/                         API client (Keychain, offline write queue, read cache) and wire models
 Training/Features/                    Today, Calendar, Progress, Diet, Data, Settings
@@ -25,7 +26,7 @@ Config/                               Info.plist fragments for both targets
 ```
 
 Screens use tokens and components from `Shared/DesignSystem` and do not set colors, fonts or radii themselves, so a
-design round is mostly edits to those two files. The Live Activity uses the same tokens.
+design round is mostly edits to those files. The Live Activity uses the same tokens.
 
 ## Live Activities
 

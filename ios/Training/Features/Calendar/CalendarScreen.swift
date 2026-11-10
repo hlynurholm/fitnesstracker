@@ -11,7 +11,6 @@ struct CalendarScreen: View {
     @State private var history: [Workout] = []
     @State private var error: String?
     @State private var showList = false
-    @State private var sheetDay: ScheduleDay?
     @State private var openDay: String?
 
     var body: some View {
@@ -22,9 +21,6 @@ struct CalendarScreen: View {
         }
         .navigationTitle("Calendar")
         .navigationDestination(item: $openDay) { DayScreen(date: $0) }
-        .sheet(item: $sheetDay) { d in
-            SessionChangeSheet(date: d.date, open: { openDay = d.date }) { await load() }
-        }
         .task(id: "\(month)\(showList)") { await load() }
         .refreshable { await load() }
     }
@@ -43,7 +39,7 @@ struct CalendarScreen: View {
             LazyVGrid(columns: columns, spacing: Theme.Space.xs) {
                 ForEach(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], id: \.self) { Text($0).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted) }
                 ForEach(schedule?.days ?? []) { d in
-                    Button { sheetDay = d } label: { cell(d) }.buttonStyle(.plain)
+                    Button { openDay = d.date } label: { cell(d) }.buttonStyle(.plain)
                 }
             }
             HStack(spacing: Theme.Space.m) {
@@ -112,10 +108,9 @@ struct CalendarScreen: View {
     }
 }
 
-/// Open a day, swap it with another day, change its session, or return it to the plan.
+/// Swap a day with another day, change its session, or return it to the plan. Opened from the day itself.
 struct SessionChangeSheet: View {
     let date: String
-    var open: (() -> Void)? = nil
     let done: () async -> Void
     @State private var schedule: Schedule?
     @State private var error: String?
@@ -133,7 +128,6 @@ struct SessionChangeSheet: View {
                         Row(title: day.name, subtitle: [day.subtitle, day.deload ? "deload week" : nil, day.testWeek ? "test week" : nil, day.moved ? "moved, the plan has \(templates[day.defaultTemplateKey]?.name ?? "")" : nil].compactMap { $0 }.joined(separator: " · ")) {
                             if let s = day.main?.status { Badge(s.replacingOccurrences(of: "_", with: " "), tone: s == "done" ? .ok : s == "skipped" ? .danger : .accent) }
                         }
-                        if let open { Button("Open this day") { dismiss(); open() } }
                         if day.moved { Button("Back to the plan: \(templates[day.defaultTemplateKey]?.name ?? "")") { apply { try await API.shared.send("PUT", "/api/schedule/\(date)", ["template_key": nil]) } } }
                     }
                     Section {

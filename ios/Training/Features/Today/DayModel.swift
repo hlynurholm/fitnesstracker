@@ -49,6 +49,8 @@ final class DayModel {
     var editing = false
     var toast: String?
     private var pending: [String: Task<Void, Never>] = [:]
+    /// The server response currently applied, to tell a changed day from an unchanged one.
+    private var shown: Data?
 
     init(date: String, program: Program) { self.date = date; self.program = program }
 
@@ -77,14 +79,35 @@ final class DayModel {
 
     // MARK: Loading
 
+    /// Puts the last saved copy of the day on screen at once. `load()` then replaces it only if the server's copy differs.
+    func showCached() {
+        guard data == nil, let bytes = API.shared.cached(path), let d = try? JSONDecoder().decode(DayResponse.self, from: bytes) else { return }
+        shown = bytes
+        apply(d)
+    }
+
     func load() async {
         do {
-            let d: DayResponse = try await API.shared.get("/api/day/\(date)", cache: true)
-            let preferred = UserDefaults.standard.string(forKey: "active_\(date)")
-            data = d
+            let bytes = try await API.shared.data(path, cache: true)
+            // Identical to what is on screen: leave it alone, so nothing typed in the meantime is reset.
+            if bytes != shown {
+                let d = try JSONDecoder().decode(DayResponse.self, from: bytes)
+                shown = bytes
+                apply(d)
+            }
             error = nil
-            open(d.workouts.first { $0.template_key == preferred } ?? d.active)
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            let cancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
+            if data == nil { self.error = error.localizedDescription } else if !cancelled { toast = error.localizedDescription }
+        }
+    }
+
+    private var path: String { "/api/day/\(date)" }
+
+    private func apply(_ d: DayResponse) {
+        let preferred = UserDefaults.standard.string(forKey: "active_\(date)")
+        data = d
+        open(d.workouts.first { $0.template_key == preferred } ?? d.active)
     }
 
     /// Shows one of the day's workouts (or the planned session when nil).

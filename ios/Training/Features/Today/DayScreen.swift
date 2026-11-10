@@ -1,48 +1,69 @@
 import SwiftUI
 
 /// One day: the planned session, logging, and everything around it. Used by the Today tab and pushed from the calendar.
+///
+/// Switching days never blanks the screen: the day on screen stays until the next one has loaded, then the content
+/// under the week strip is swapped in one step.
 struct DayScreen: View {
     @State var date: String
     /// The Today tab's own screen (shows the Settings gear), as opposed to a day pushed from the calendar.
     var isRoot = false
+    @State private var model: DayModel?
+
     var body: some View {
-        DayContent(date: date, isRoot: isRoot) { date = $0 }.id(date)
+        Group {
+            if let model {
+                DayContent(model: model, selected: date, isRoot: isRoot) { date = $0 }
+            } else {
+                Screen { ProgressView().frame(maxWidth: .infinity).padding(.top, 80) }
+                    .navigationTitle(date == Day.today() ? "Today" : Day.label(date))
+            }
+        }
+        .task(id: date) {
+            if let model, model.date == date { await model.load(); return } // back on this screen: refresh in place
+            let next = DayModel(date: date, program: AppModel.shared.program!)
+            if model == nil {
+                // Nothing on screen yet: show the saved copy of the day straight away.
+                next.showCached()
+                if next.data != nil { model = next }
+            }
+            await next.load()
+            if !Task.isCancelled { model = next }
+        }
     }
 }
 
 private struct DayContent: View {
+    @Bindable var model: DayModel
+    /// The day that was asked for. It can be one step ahead of `model.date` while that day loads.
+    let selected: String
     let isRoot: Bool
     let go: (String) -> Void
-    @State private var model: DayModel
     @State private var showChange = false
     @State private var showFinish = false
     @State private var confirmDelete = false
     @Environment(\.scenePhase) private var scenePhase
 
-    init(date: String, isRoot: Bool, go: @escaping (String) -> Void) {
-        self.isRoot = isRoot
-        self.go = go
-        _model = State(initialValue: DayModel(date: date, program: AppModel.shared.program!))
-    }
-
     var body: some View {
         Screen {
             if let day = model.day {
-                if API.shared.offline { Banner("Offline: showing the last saved copy of this day. New entries are saved on the phone and synced later.") }
-                header(day)
-                WeekStrip(week: model.data?.week ?? [], selected: model.date, go: go)
-                WeightCard(model: model)
-                session(day)
-                others
-                if day.testWeek { TestsCard(model: model) }
-                if model.template.kind != "lift" { ChecklistCard(model: model, block: "knee", title: model.program.kneeRoutine.title, note: (model.program.kneeRoutine.note ?? "") + (model.template.kind == "run" ? " Optional after the run." : ""), items: model.program.kneeRoutine.items.map { .init(id: $0.id, text: $0.text) }) }
+                // The week strip keeps its identity across days, so it never redraws from scratch.
+                WeekStrip(week: model.data?.week ?? [], selected: selected, go: go)
+                VStack(alignment: .leading, spacing: Theme.Space.m) {
+                    if API.shared.offline { Banner("Offline: showing the last saved copy of this day. New entries are saved on the phone and synced later.") }
+                    header(day)
+                    WeightCard(model: model)
+                    session(day)
+                    others
+                    if day.testWeek { TestsCard(model: model) }
+                    if model.template.kind != "lift" { ChecklistCard(model: model, block: "knee", title: model.program.kneeRoutine.title, note: (model.program.kneeRoutine.note ?? "") + (model.template.kind == "run" ? " Optional after the run." : ""), items: model.program.kneeRoutine.items.map { .init(id: $0.id, text: $0.text) }) }
+                }
+                .id(model.date) // per-day field state (typed weight, open notes) starts fresh for each day
             } else if let error = model.error {
                 ErrorCard(message: error) { await model.load() }
-            } else {
-                ProgressView().frame(maxWidth: .infinity).padding(.top, 80)
             }
         }
-        .navigationTitle(model.isToday ? "Today" : Day.label(model.date))
+        .navigationTitle(selected == Day.today() ? "Today" : Day.label(selected))
         .toolbar {
             if isRoot {
                 ToolbarItem(placement: .topBarLeading) {
@@ -50,13 +71,12 @@ private struct DayContent: View {
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if !model.isToday { Button("Today") { go(Day.today()) } }
-                Button { go(Day.add(model.date, -1)) } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Previous day")
-                Button { go(Day.add(model.date, 1)) } label: { Image(systemName: "chevron.right") }.accessibilityLabel("Next day")
+                if selected != Day.today() { Button("Today") { go(Day.today()) } }
+                Button { go(Day.add(selected, -1)) } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Previous day")
+                Button { go(Day.add(selected, 1)) } label: { Image(systemName: "chevron.right") }.accessibilityLabel("Next day")
             }
         }
         .refreshable { await model.load() }
-        .task { await model.load() }
         .safeAreaInset(edge: .bottom) { if model.template.kind == "lift", model.mode == .log { TimerBar(model: model) } }
         .toast($model.toast)
         .sheet(isPresented: $showChange) { SessionChangeSheet(date: model.date) { await model.load() } }

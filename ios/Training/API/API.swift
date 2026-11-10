@@ -66,11 +66,14 @@ final class API {
             if cache { try? data.write(to: Self.cacheFile(path)) }
             offline = false
             return data
-        } catch let error as URLError {
-            if cache, let data = try? Data(contentsOf: Self.cacheFile(path)) { offline = true; return data }
+        } catch let error as URLError where error.code != .cancelled {
+            if cache, let data = cached(path) { offline = true; return data }
             throw APIError(message: error.localizedDescription)
         }
     }
+
+    /// The last good response for a path, if one is saved on the phone.
+    func cached(_ path: String) -> Data? { try? Data(contentsOf: Self.cacheFile(path)) }
 
     // MARK: Writes
 

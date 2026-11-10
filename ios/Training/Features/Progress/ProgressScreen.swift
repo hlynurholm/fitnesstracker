@@ -41,7 +41,7 @@ struct ProgressScreen: View {
         var weights: [Point] = []
         var rolling: [Point] = []
         var lifts: [LiftSeries] = []
-        var runs: [(date: String, pace: Double, km: Double)] = []
+        var runs: [(date: String, pace: Double, km: Double, easy: Bool)] = []
         var weeks: [(week: Int, done: Int)] = []
 
         init(_ d: Dashboard, _ program: Program) {
@@ -64,7 +64,7 @@ struct ProgressScreen: View {
 
             runs = d.workouts.filter { $0.kind == "run" && $0.status != "skipped" }.compactMap { w in
                 guard let km = w.distance_km, let s = w.time_sec, km > 0, s > 0 else { return nil }
-                return (w.date, s / km, km)
+                return (w.date, s / km, km, program.templates[w.template_key]?.easy == true)
             }
 
             if let start = d.settings["program_start_date"] {
@@ -96,18 +96,18 @@ struct ProgressScreen: View {
     private func weight(_ m: Model, _ d: Dashboard, _ program: Program) -> some View {
         let goal = d.settings.number("goal_weight_kg") ?? program.body.goalWeightKg
         VStack(alignment: .leading, spacing: Theme.Space.m) {
-            CardTitle("Body weight", note: "daily, 7-day average and goal")
+            CardTitle("Body weight", note: "goal \(Fmt.number(goal)) kg")
             if m.weights.count < 2 {
                 empty("Log your morning weight on the Today tab and the trend shows up here.")
             } else {
-                Chart {
-                    ForEach(m.weights) { PointMark(x: .value("Date", $0.date), y: .value("kg", $0.value)).foregroundStyle(Theme.Palette.muted).symbolSize(20) }
-                    ForEach(m.rolling) { LineMark(x: .value("Date", $0.date), y: .value("kg", $0.value)).foregroundStyle(Theme.Palette.accent).interpolationMethod(.catmullRom) }
-                    RuleMark(y: .value("Goal", goal)).foregroundStyle(Theme.Palette.ok).lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                        .annotation(position: .top, alignment: .leading) { Text("Goal \(Fmt.number(goal)) kg").font(Theme.Typography.label).foregroundStyle(Theme.Palette.ok) }
+                if let first = m.rolling.first, let last = m.rolling.last {
+                    let change = last.value - first.value
+                    StatLine(value: kg(last.value), caption: "\(Fmt.signed(change, digits: 1)) kg since \(Day.short(Day.string(first.date)))", tone: change < 0 ? .ok : nil)
                 }
-                .chartYScale(domain: .automatic(includesZero: false))
-                .frame(height: 200)
+                TrendChart(series: [
+                    TrendSeries(name: "7-day average", color: Theme.Palette.accent, points: m.rolling.map { .init(date: $0.date, value: $0.value) }),
+                    TrendSeries(name: "Weigh-in", color: Theme.Palette.muted, style: .points, points: m.weights.map { .init(date: $0.date, value: $0.value) }),
+                ], goal: ("Goal \(Fmt.number(goal)) kg", goal), format: kg)
             }
         }
         .card()
@@ -116,11 +116,7 @@ struct ProgressScreen: View {
     private func sessions(_ m: Model) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             CardTitle("Sessions", note: "days trained per week")
-            Chart(m.weeks, id: \.week) {
-                BarMark(x: .value("Week", "W\($0.week)"), y: .value("Done", $0.done)).foregroundStyle(Theme.Palette.accent)
-            }
-            .chartYScale(domain: 0...7)
-            .frame(height: 140)
+            BarsChart(bars: m.weeks.map { .init(label: "W\($0.week)", value: Double($0.done)) }, highlight: m.weeks.last.map { "W\($0.week)" })
         }
         .card()
     }
@@ -138,18 +134,19 @@ struct ProgressScreen: View {
                     ForEach(m.lifts) { Text(program.exercise($0.key).shortName).tag($0.key) }
                 }
                 .pickerStyle(.menu).fieldStyle()
-                let weighted = series.sessions.contains { $0.top != nil }
-                Chart(series.sessions, id: \.date) { s in
-                    if weighted {
-                        if let v = s.top { LineMark(x: .value("Date", Day.date(s.date)), y: .value("kg", v), series: .value("s", "Top set")).foregroundStyle(by: .value("s", "Top set")).symbol(.circle) }
-                        if ex.e1rm == true, let v = s.e1rm { LineMark(x: .value("Date", Day.date(s.date)), y: .value("kg", v), series: .value("s", "Estimated 1RM")).foregroundStyle(by: .value("s", "Estimated 1RM")).symbol(.circle) }
-                    } else {
-                        LineMark(x: .value("Date", Day.date(s.date)), y: .value("Best", ex.fields.contains("seconds") ? s.seconds : s.reps)).foregroundStyle(Theme.Palette.accent).symbol(.circle)
-                    }
+                let top = series.sessions.compactMap { s in s.top.map { TrendSeries.Point(date: Day.date(s.date), value: $0) } }
+                if !top.isEmpty {
+                    let change = top.last!.value - top.first!.value
+                    StatLine(value: kg(top.last!.value), caption: top.count < 2 ? "top set" : change == 0 ? "top set, unchanged over \(top.count) sessions" : "top set, \(Fmt.signed(change, digits: change == change.rounded() ? 0 : 1)) kg over \(top.count) sessions", tone: change > 0 ? .ok : nil)
+                    let estimate = series.sessions.compactMap { s in s.e1rm.map { TrendSeries.Point(date: Day.date(s.date), value: $0) } }
+                    TrendChart(series: [TrendSeries(name: "Top set", color: Theme.Palette.series[0], points: top)]
+                        + (ex.e1rm == true ? [TrendSeries(name: "Estimated 1RM", color: Theme.Palette.series[3], points: estimate)] : []), format: kg)
+                } else {
+                    let timed = ex.fields.contains("seconds")
+                    let best = series.sessions.map { TrendSeries.Point(date: Day.date($0.date), value: Double(timed ? $0.seconds : $0.reps)) }
+                    StatLine(value: "\(Int(best.last?.value ?? 0)) \(timed ? "s" : "reps")", caption: "best set, latest session")
+                    TrendChart(series: [TrendSeries(name: timed ? "Best hold" : "Best set", color: Theme.Palette.series[0], points: best)], format: { "\(Int($0.rounded()))" })
                 }
-                .chartForegroundStyleScale(["Top set": Theme.Palette.series[0], "Estimated 1RM": Theme.Palette.series[1]])
-                .chartYScale(domain: .automatic(includesZero: false))
-                .frame(height: 200)
             }
         }
         .card()
@@ -158,21 +155,24 @@ struct ProgressScreen: View {
     @ViewBuilder
     private func running(_ m: Model, _ d: Dashboard, _ program: Program) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
-            CardTitle("Running", note: "pace per run, lower is faster")
+            CardTitle("Running", note: "pace per run, faster is higher")
             if m.runs.isEmpty {
                 empty("Log a run with distance and time, or attach a Garmin file.")
             } else {
-                Chart(m.runs, id: \.date) {
-                    LineMark(x: .value("Date", Day.date($0.date)), y: .value("Pace", $0.pace)).foregroundStyle(Theme.Palette.run).symbol(.circle)
-                }
-                .chartYScale(domain: .automatic(includesZero: false, reversed: true))
-                .chartYAxis { AxisMarks { v in AxisGridLine(); AxisValueLabel { if let s = v.as(Double.self) { Text(Fmt.time(s)) } } } }
-                .frame(height: 180)
+                if let last = m.runs.last { StatLine(value: Fmt.pace(last.pace), caption: "\(Fmt.number(last.km)) km on \(Day.short(last.date))") }
+                // Easy runs and hard sessions are different paces on purpose, so each gets its own line.
+                let hard = m.runs.filter { !$0.easy }.map { TrendSeries.Point(date: Day.date($0.date), value: $0.pace) }
+                let easy = m.runs.filter { $0.easy }.map { TrendSeries.Point(date: Day.date($0.date), value: $0.pace) }
+                TrendChart(series: (hard.isEmpty ? [] : [TrendSeries(name: "Intervals and tests", color: Theme.Palette.run, points: hard)])
+                    + (easy.isEmpty ? [] : [TrendSeries(name: "Easy runs", color: Theme.Palette.ok, points: easy)]),
+                           lowerIsBetter: true, height: 180, format: { Fmt.time($0) })
             }
             HeartRateZones(heartRate: program.heartRate)
         }
         .card()
     }
+
+    private func kg(_ value: Double) -> String { Fmt.number((value * 10).rounded() / 10) + " kg" }
 
     @ViewBuilder
     private func bests(_ m: Model, _ program: Program) -> some View {

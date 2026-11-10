@@ -274,6 +274,46 @@ async function route(method, p, request, env, url, settings) {
     }
   }
 
+  // Body measurements read from Apple Health by the iOS app (a connected scale writes them there).
+  // { days: [{ date, weight_kg, metrics: { fatPercent, leanMassKg, bmi, waistCm } }] }
+  // Weights go to body_metrics with source "apple_health", so a weight typed by hand is never replaced. The other
+  // measurements are merged into the day's daily_metrics under "body.", next to what Garmin sends.
+  // (/api/health is taken: it is the public status check in index.js.)
+  if (a === "apple-health" && (method === "PUT" || method === "POST")) {
+    const body = await readJson(request);
+    const days = Array.isArray(body.days) ? body.days : [];
+    if (!days.length) bad("days is required");
+    if (days.length > 400) bad("At most 400 days per request");
+    const weights = [], merged = {};
+    for (const d of days) {
+      const date = assertDate(d && d.date);
+      const w = num(d.weight_kg);
+      if (w != null) { if (w < 30 || w > 300) bad(`Weight out of range on ${date}`); weights.push([date, Math.round(w * 100) / 100]); }
+      for (const [k, v] of Object.entries((d && d.metrics) || {})) {
+        if (!/^[A-Za-z][A-Za-z0-9]{0,40}$/.test(k)) bad(`Bad metric name ${k}`);
+        const n = num(v);
+        if (n != null) (merged[date] = merged[date] || {})[`body.${k}`] = Math.round(n * 100) / 100;
+      }
+    }
+    for (let i = 0; i < weights.length; i += 30) { // 3 bound values per row, D1 allows 100 per statement
+      const part = weights.slice(i, i + 30);
+      await env.DB.prepare(`INSERT INTO body_metrics (date, weight_kg, source) VALUES ${part.map(() => "(?, ?, 'apple_health')").join(", ")}
+        ON CONFLICT(date, source) DO UPDATE SET weight_kg = excluded.weight_kg, updated_at = datetime('now')`).bind(...part.flat()).run();
+    }
+    const dates = Object.keys(merged).sort();
+    if (dates.length) {
+      const { results } = await env.DB.prepare("SELECT date, data FROM daily_metrics WHERE date >= ? AND date <= ?").bind(dates[0], dates[dates.length - 1]).all();
+      const old = Object.fromEntries(results.map((r) => [r.date, parseJsonField(r.data, {})]));
+      for (let i = 0; i < dates.length; i += 40) {
+        const part = dates.slice(i, i + 40);
+        await env.DB.prepare(`INSERT INTO daily_metrics (date, data, updated_at) VALUES ${part.map(() => "(?, ?, datetime('now'))").join(", ")}
+          ON CONFLICT(date) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`)
+          .bind(...part.flatMap((d) => [d, JSON.stringify({ ...(old[d] || {}), ...merged[d] })])).run();
+      }
+    }
+    return { ok: true, weights: weights.length, days_with_metrics: dates.length };
+  }
+
   // Daily health metrics imported from the watch, oldest first. Each day is a flat object of metric name to value.
   if (a === "metrics" && method === "GET") {
     const days = Math.min(400, Math.max(1, Number(url.searchParams.get("days")) || 120));
@@ -349,7 +389,8 @@ async function getDay(env, date, settings) {
   const keys = new Set(day.plan.map((e) => e.key));
   for (const w of workouts) for (const e of w.plan || []) keys.add(e.key);
   const last = await lastSetsFor(env, [...keys], date);
-  const body = await env.DB.prepare("SELECT * FROM body_metrics WHERE date = ? AND source = 'manual'").bind(date).first();
+  // A weight typed in the app wins; otherwise the one the scale sent through Apple Health.
+  const body = await env.DB.prepare("SELECT * FROM body_metrics WHERE date = ? AND weight_kg IS NOT NULL ORDER BY CASE source WHEN 'manual' THEN 0 ELSE 1 END LIMIT 1").bind(date).first();
   const monday = mondayOf(date), sunday = addDays(monday, 6);
   const tests = day.testWeek ? (await env.DB.prepare("SELECT * FROM tests WHERE date BETWEEN ? AND ?").bind(monday, sunday).all()).results : [];
   const weekRows = (await env.DB.prepare("SELECT id, date, template_key, kind, status FROM workouts WHERE date BETWEEN ? AND ?").bind(monday, sunday).all()).results;

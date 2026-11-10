@@ -36,14 +36,14 @@ struct DataScreen: View {
             if HealthSync.available {
                 let health = HealthSync.shared
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
-                    CardTitle("Apple Health", note: "nutrition and weight")
+                    CardTitle("Apple Health", note: "nutrition and body")
                     if health.enabled {
                         Label("Connected", systemImage: "heart.fill").font(Theme.Typography.callout).foregroundStyle(Theme.Palette.ok)
                         if let status = health.status { Text(status).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
                         Button(health.running ? "Syncing" : "Sync now") { Task { await health.sync() } }.buttonStyle(.tinted).disabled(health.running)
                         Button("Disconnect") { health.disconnect() }.font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted)
                     } else {
-                        Text("MyFitnessPal saves your food and weight to Apple Health. Connect, and daily totals are sent to the tracker whenever you open the app. Turn on HealthKit Sharing in MyFitnessPal first.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+                        Text("Reads food from MyFitnessPal and weight, body fat, lean mass and BMI from a connected scale, and sends them to the tracker whenever you open the app. The first sync includes your older measurements.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
                         if let status = health.status { Text(status).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.danger) }
                         Button("Connect Apple Health") { Task { await health.connect() } }.buttonStyle(.tinted)
                     }

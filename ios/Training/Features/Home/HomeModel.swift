@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The cards the dashboard can show. The raw value is what is saved in the layout, so do not rename a case.
 enum CardKind: String, CaseIterable, Codable {
-    case today, steps, restingHR, sleep, hrv, bodyBattery, week, weight, nutrition, stress, calories, intensity, floors, distance, sleepScore, respiration, spo2, facts, all
+    case today, steps, restingHR, sleep, hrv, bodyBattery, week, weight, bodyFat, leanMass, nutrition, stress, calories, intensity, floors, distance, sleepScore, respiration, spo2, facts, all
 
     var title: String {
         switch self {
@@ -78,6 +78,9 @@ struct MetricSpec {
         .distance: .init(title: "Distance on foot", icon: "point.topleft.down.to.point.bottomright.curvepath", tint: Theme.Palette.accent, key: "movement.steps.distanceInMeters", unit: "km", style: .bars, scale: 0.001, digits: 1),
         .sleepScore: .init(title: "Sleep score", icon: "moon.stars.fill", tint: Theme.Palette.sleep, key: "sleep.sleepScores.overall.value"),
         .respiration: .init(title: "Breathing rate", icon: "lungs.fill", tint: Theme.Palette.calm, key: "respiration.avgValue", unit: "/min"),
+        // From a scale through Apple Health.
+        .bodyFat: .init(title: "Body fat", icon: "percent", tint: Theme.Palette.calm, key: "body.fatPercent", unit: "%", digits: 1),
+        .leanMass: .init(title: "Lean mass", icon: "figure.strengthtraining.traditional", tint: Theme.Palette.calm, key: "body.leanMassKg", unit: "kg", digits: 1),
         .spo2: .init(title: "Blood oxygen", icon: "drop.fill", tint: Theme.Palette.heart, key: "pulseOx.avgValue", unit: "%"),
     ]
 }
@@ -93,6 +96,7 @@ struct CardSetting: Codable, Identifiable, Hashable {
         .init(kind: .today, wide: true), .init(kind: .steps, wide: false), .init(kind: .restingHR, wide: false),
         .init(kind: .sleep, wide: true), .init(kind: .hrv, wide: false), .init(kind: .bodyBattery, wide: false),
         .init(kind: .week, wide: true), .init(kind: .weight, wide: false), .init(kind: .nutrition, wide: false),
+        .init(kind: .bodyFat, wide: false), .init(kind: .leanMass, wide: false),
         .init(kind: .stress, wide: false), .init(kind: .calories, wide: false), .init(kind: .intensity, wide: false), .init(kind: .floors, wide: false),
         .init(kind: .facts, wide: true), .init(kind: .sleepScore, wide: false), .init(kind: .distance, wide: false),
         .init(kind: .respiration, wide: false), .init(kind: .spo2, wide: false), .init(kind: .all, wide: true),
@@ -114,8 +118,10 @@ final class HomeModel {
 
     init() {
         let saved = UserDefaults.standard.data(forKey: "homeLayout").flatMap { try? JSONDecoder().decode([CardSetting].self, from: $0) } ?? []
-        // Cards added in a later version join the end of a saved layout.
-        layout = saved + CardSetting.defaults.filter { d in !saved.contains { $0.kind == d.kind } }
+        // Cards added in a later version join a saved layout, before the two lists that close it.
+        let added = CardSetting.defaults.filter { d in !saved.contains { $0.kind == d.kind } }
+        let tail = saved.filter { $0.kind.alwaysWide }, head = saved.filter { !$0.kind.alwaysWide }
+        layout = saved.isEmpty ? added : head + added + tail
     }
 
     func load() async {
@@ -144,9 +150,9 @@ final class HomeModel {
 
     func value(_ key: String, on date: String) -> Double? { days[date]?[key]?.number }
 
-    /// The most recent day that has the metric, today first.
+    /// The most recent day that has the metric, today first. Looks two months back, for things measured now and then.
     func latest(_ key: String) -> (date: String, value: Double)? {
-        for back in 0..<14 { let d = Day.add(today, -back); if let v = value(key, on: d) { return (d, v) } }
+        for back in 0..<60 { let d = Day.add(today, -back); if let v = value(key, on: d) { return (d, v) } }
         return nil
     }
 

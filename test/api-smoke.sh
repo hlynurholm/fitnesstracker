@@ -95,6 +95,15 @@ out=$(j -X PUT -d '{"max_hr":"188"}' "$BASE/api/settings"); check "settings save
 out=$(j -X PUT -d '{"bogus":"1"}' "$BASE/api/settings"); check "unknown setting rejected" '[[ "$out" == *"Unknown setting"* ]]'
 # delete set
 out=$(j -X DELETE "$BASE/api/sets/testset0004"); check "set deleted" '[[ "$out" == *"ok"* ]]'
+# body measurements from Apple Health
+out=$(j -X PUT -d '{"days":[{"date":"2026-10-20","weight_kg":92.4,"metrics":{"fatPercent":21.5,"leanMassKg":72.5}},{"date":"2026-10-21","weight_kg":"92,1"},{"date":"2026-10-26","weight_kg":91.0}]}' "$BASE/api/apple-health"); check "health upload stores 3 weights and 1 day of composition" '[[ "$out" == *"\"weights\":3"* && "$out" == *"\"days_with_metrics\":1"* ]]'
+out=$(j "$BASE/api/metrics?days=400"); check "composition is under body. in the daily metrics" '[[ "$out" == *"\"body.fatPercent\":21.5"* && "$out" == *"\"body.leanMassKg\":72.5"* ]]'
+out=$(j -X PUT -d '{"days":[{"date":"2026-10-20","metrics":{"bmi":26.1}}]}' "$BASE/api/apple-health"); out=$(j "$BASE/api/metrics?days=400"); check "a later upload merges, it does not replace" '[[ "$out" == *"\"body.fatPercent\":21.5"* && "$out" == *"\"body.bmi\":26.1"* ]]'
+out=$(j "$BASE/api/day/2026-10-20"); check "the day shows the scale weight when none was typed" '[[ "$out" == *"\"weight_kg\":92.4"*"\"source\":\"apple_health\""* ]]'
+out=$(j "$BASE/api/day/2026-10-26"); check "a typed weight wins over the scale on the same day" '[[ "$out" == *"\"weight_kg\":93,"*"\"source\":\"manual\""* && "$out" != *"\"weight_kg\":91,"* ]]'
+out=$(j "$BASE/api/body"); n=$(grep -o '"source":"apple_health"' <<<"$out" | wc -l | tr -d ' '); check "three scale weigh-ins stored next to the typed ones (got $n)" '[ "$n" = "3" ]'
+out=$(j -X PUT -d '{"days":[{"date":"2026-10-20","weight_kg":20}]}' "$BASE/api/apple-health"); check "an impossible weight is rejected" '[[ "$out" == *"out of range"* ]]'
+out=$(j -X PUT -d '{"days":[{"date":"2026-10-20","metrics":{"bad.name":1}}]}' "$BASE/api/apple-health"); check "a bad metric name is rejected" '[[ "$out" == *"Bad metric name"* ]]'
 # garmin sync: off until the GARMIN_API_KEY secret is set (the full path is covered by test/garmin-sync.sh)
 out=$(j "$BASE/api/garmin"); check "garmin status: not configured" '[[ "$out" == *"\"configured\":false"* ]]'
 out=$(j -X POST -d '{}' "$BASE/api/garmin/sync"); check "garmin sync without a key does nothing" '[[ "$out" == *"GARMIN_API_KEY is not set"* && "$out" == *"\"imported\":[]"* ]]'

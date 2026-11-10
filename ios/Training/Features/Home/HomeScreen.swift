@@ -133,7 +133,8 @@ private struct MetricCard: View {
     var body: some View {
         let latest = model.latest(spec.key)
         let goal = latest.flatMap { l in spec.goalKey.flatMap { model.value($0, on: l.date) } }
-        let chart = Spark(values: model.series(spec.key, wide ? 30 : 14).map { $0.map { $0 * spec.scale } }, style: spec.style, color: spec.tint, goal: goal.map { $0 * spec.scale }, height: wide ? 72 : 44)
+        let sparse = kind == .bodyFat || kind == .leanMass // weighed now and then, so show a longer stretch
+        let chart = Spark(values: model.series(spec.key, sparse ? (wide ? 120 : 60) : wide ? 30 : 14).map { $0.map { $0 * spec.scale } }, style: spec.style, color: spec.tint, goal: goal.map { $0 * spec.scale }, height: wide ? 72 : 44)
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: kind) {
                 if let latest, let goal, goal > 0 { ProgressRing(progress: latest.value / goal, color: spec.tint, size: 22) }
@@ -156,7 +157,7 @@ private struct MetricCard: View {
         var parts: [String] = []
         if let latest, let note = dayNote(latest.date, today: model.today) { parts.append(note) }
         if let goal, goal > 0 { parts.append("goal \(show(goal))") }
-        if let avg = model.average(spec.key, 7) { parts.append("7-day avg \(show(avg))") }
+        if kind == .bodyFat || kind == .leanMass { parts.append("from your scale") } else if let avg = model.average(spec.key, 7) { parts.append("7-day avg \(show(avg))") }
         if let extra = spec.extra, let latest, let v = model.value(extra.key, on: latest.date) { parts.append("\(extra.label) \(show(v))") }
         if kind == .hrv, let status = model.latestText("hrv.status") { parts.append(status.lowercased()) }
         if kind == .stress, let q = model.latestText("stress.qualifier") { parts.append(q.replacingOccurrences(of: "_", with: " ")) }

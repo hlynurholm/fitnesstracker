@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Training reads the nutrition and weight that MyFitnessPal saves to Health, so your diet and weight charts fill in without a manual export.</string>
+	<string>Training reads nutrition and body measurements (weight, body fat, lean mass, BMI, waist) that MyFitnessPal and your scale save to Health, so your charts fill in without a manual export.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

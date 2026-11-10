@@ -20,6 +20,10 @@ struct RunRoute {
         }
     }
 
+    /// Seconds into the run at a point, and the point reached by a given time.
+    func seconds(at index: Int) -> Double { points[index].seconds ?? Double(index) }
+    func index(atSeconds t: Double) -> Int { points.indices.first { seconds(at: $0) >= t } ?? points.count - 1 }
+
     /// Where each whole kilometre was reached.
     var kilometres: [(km: Int, coordinate: CLLocationCoordinate2D)] {
         guard let total = points.last?.km, total >= 1 else { return [] }
@@ -236,6 +240,10 @@ private struct RouteMap: View {
     let route: RunRoute
     let activity: GarminActivity
     @State private var picked: Int?
+    @State private var playing = false
+    @State private var stripWidth: CGFloat = 0
+    /// How many times faster than real life the playback runs.
+    static let playbackSpeed = 200.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
@@ -270,7 +278,7 @@ private struct RouteMap: View {
                     }
                 }
                 .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
-                .onTapGesture { picked = nearest(to: $0, proxy) } // a tap off the route clears the point
+                .onTapGesture { playing = false; picked = nearest(to: $0, proxy) } // a tap off the route clears the point
                 .safeAreaInset(edge: .top, spacing: 0) { readout }
                 .safeAreaInset(edge: .bottom, spacing: 0) { strip }
             }
@@ -283,8 +291,25 @@ private struct RouteMap: View {
                 Text("faster").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
             }
             .padding(.horizontal, Theme.Space.xs)
-            Text("Drag along the strip or tap the route to read any point.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).padding(.horizontal, Theme.Space.xs)
+            Text("Press play to watch the run at \(Int(Self.playbackSpeed))× speed. Drag along the strip or tap the route to read any point.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).padding(.horizontal, Theme.Space.xs)
         }
+        .task(id: playing) { await play() }
+    }
+
+    /// Moves the point along the route by the watch's own clock, from where it stands (or from the start once it
+    /// has reached the end).
+    private func play() async {
+        guard playing else { return }
+        let end = route.seconds(at: route.points.count - 1)
+        let from = picked.flatMap { $0 < route.points.count - 1 ? route.seconds(at: $0) : nil } ?? route.seconds(at: 0)
+        let began = Date()
+        var clock = from
+        while !Task.isCancelled, clock < end {
+            try? await Task.sleep(for: .milliseconds(33))
+            clock = from + Date().timeIntervalSince(began) * Self.playbackSpeed
+            if !Task.isCancelled { picked = route.index(atSeconds: clock) }
+        }
+        if !Task.isCancelled { playing = false }
     }
 
     /// The route point under a tap, if the tap landed close enough to the line.
@@ -322,32 +347,37 @@ private struct RouteMap: View {
 
     /// The run from start to finish as bars: as tall as the ground was high, coloured by pace. Drag across it to move the point.
     private var strip: some View {
-        Canvas { context, size in
-            let count = min(route.points.count, 80)
-            let alts = route.points.compactMap(\.alt), low = alts.min() ?? 0, high = alts.max() ?? 0
-            let width = size.width / CGFloat(count)
-            for b in 0..<count {
-                let part = route.points[(b * route.points.count / count)..<max((b + 1) * route.points.count / count, b * route.points.count / count + 1)]
-                let partAlts = part.compactMap(\.alt)
-                let level = high - low >= 3 && !partAlts.isEmpty ? (partAlts.reduce(0, +) / Double(partAlts.count) - low) / (high - low) : 0.5
-                let height = size.height * (0.3 + 0.7 * level)
-                let bar = CGRect(x: CGFloat(b) * width + 0.75, y: size.height - height, width: max(width - 1.5, 1), height: height)
-                let passed = picked.map { part.startIndex <= $0 } ?? true
-                context.fill(Path(roundedRect: bar, cornerRadius: 1.5), with: .color(Theme.Palette.effort(part.map(\.effort).reduce(0, +) / Double(part.count)).opacity(passed ? 1 : 0.3)))
+        HStack(spacing: Theme.Space.m) {
+            Button { playing.toggle() } label: {
+                Image(systemName: playing ? "pause.fill" : "play.fill").font(.subheadline.weight(.bold)).foregroundStyle(.white)
+                    .frame(width: 36, height: 36).background(Theme.Palette.accent, in: Circle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(playing ? "Pause playback" : "Play the run at \(Int(Self.playbackSpeed)) times speed")
+            Canvas { context, size in
+                let count = min(route.points.count, 80)
+                let alts = route.points.compactMap(\.alt), low = alts.min() ?? 0, high = alts.max() ?? 0
+                let width = size.width / CGFloat(count)
+                for b in 0..<count {
+                    let part = route.points[(b * route.points.count / count)..<max((b + 1) * route.points.count / count, b * route.points.count / count + 1)]
+                    let partAlts = part.compactMap(\.alt)
+                    let level = high - low >= 3 && !partAlts.isEmpty ? (partAlts.reduce(0, +) / Double(partAlts.count) - low) / (high - low) : 0.5
+                    let height = size.height * (0.3 + 0.7 * level)
+                    let bar = CGRect(x: CGFloat(b) * width + 0.75, y: size.height - height, width: max(width - 1.5, 1), height: height)
+                    let passed = picked.map { part.startIndex <= $0 } ?? true
+                    context.fill(Path(roundedRect: bar, cornerRadius: 1.5), with: .color(Theme.Palette.effort(part.map(\.effort).reduce(0, +) / Double(part.count)).opacity(passed ? 1 : 0.3)))
+                }
+            }
+            .frame(height: 36)
+            .contentShape(Rectangle())
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
+            .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                playing = false
+                picked = Int((min(max(drag.location.x / max(stripWidth, 1), 0), 1) * Double(route.points.count - 1)).rounded())
+            })
+            .accessibilityLabel("Scrub along the run")
         }
-        .frame(height: 36)
         .padding(.horizontal, Theme.Space.m).padding(.vertical, Theme.Space.s)
         .background(.regularMaterial)
-        .contentShape(Rectangle())
-        .overlay {
-            GeometryReader { geo in
-                Color.clear.contentShape(Rectangle()).gesture(DragGesture(minimumDistance: 0).onChanged { drag in
-                    let fraction = min(max((drag.location.x - Theme.Space.m) / max(geo.size.width - Theme.Space.m * 2, 1), 0), 1)
-                    picked = Int((fraction * Double(route.points.count - 1)).rounded())
-                })
-            }
-        }
-        .accessibilityLabel("Scrub along the run")
     }
 }

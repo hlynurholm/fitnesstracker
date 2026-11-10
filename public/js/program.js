@@ -109,6 +109,7 @@ export const PROGRAM = {
     db_bench: { name: "DB bench press", fields: ["kg", "reps"], load: "dumbbell", increment: 2, group: "push", e1rm: true, kgHint: "per hand" },
     db_single_leg_rdl: { name: "DB single leg RDL", fields: ["kg", "reps"], load: "dumbbell", increment: 2, group: "legs", perSide: true, e1rm: true, kgHint: "per hand" },
     band_pull_up: { name: "Banded pull-ups", fields: ["reps"], load: "bodyweight", group: "pull" },
+    pull_up_negative: { name: "Pull-up negatives", fields: ["reps"], load: "bodyweight", group: "pull" },
     adductor_machine: { name: "Adductor machine", fields: ["kg", "reps"], load: "machine", increment: 2.5, group: "legs" },
     suitcase_march: { name: "Suitcase march on the spot", short: "Suitcase march", fields: ["kg", "seconds"], load: "dumbbell", increment: 2, group: "core", perSide: true, kgHint: "one hand" },
     suitcase_carry: { name: "Suitcase carry", fields: ["kg", "meters"], load: "dumbbell", increment: 2, group: "core", perSide: true },
@@ -177,6 +178,7 @@ export const PROGRAM = {
         { key: "chest_supported_row", sets: 3, reps: "10", repsMin: 10, repsMax: 10 },
         { key: "nordic_curl", sets: 3, reps: "4 to 6", repsMin: 4, repsMax: 6, note: "Feet under a pad or held by a partner. Lower slowly" },
         { key: "side_plank", sets: 3, reps: "30 s per side", seconds: 30 },
+        { key: "pull_up_negative", sets: 2, reps: "1 to 3", repsMin: 1, repsMax: 3, note: "No band. Chin over the bar, lower in 4 to 5 s. Stop when you can't control the lowering. Add a rep per set up to 3 × 3" },
       ],
     },
     lift_c: {

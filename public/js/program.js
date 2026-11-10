@@ -11,6 +11,10 @@ export const PROGRAM = {
   // plan holds") through the end of the sixth month from now, and empty after that. The window rolls forward by
   // itself on the 1st of each month.
   horizon: { concreteMonths: 1, estimateMonths: 6 },
+  // Assumptions behind the projections shown on estimated days (src/projection.js). These are guesses to be tuned.
+  // Lifts: with fewer than liftTrendMinSessions logged, assume one weight step every liftStepEveryWeeks; with more,
+  // follow the logged trend. Either way the weekly gain fades over liftTaperWeeks. Interval pace follows running.paceNote.
+  projection: { liftStepEveryWeeks: 2, liftTrendMinSessions: 3, liftTaperWeeks: 12, paceStepSec: 5, paceStepEveryWeeks: 2 },
   body: { startWeightKg: 93, goalWeightKg: 85, heightCm: 188 },
   nutrition: {
     calories: 2450, proteinG: 170, funBudgetWeekKcal: 2500, maintenanceEstimate: 3000, lossPerWeekKg: [0.4, 0.6],

@@ -1,5 +1,5 @@
 // Network-first service worker: keeps the app shell available offline, never caches API calls.
-const CACHE = "training-shell-v4";
+const CACHE = "training-shell-v5";
 const SHELL = ["/", "/index.html", "/css/app.css", "/js/app.js", "/js/api.js", "/js/util.js", "/js/charts.js", "/js/program.js",
   "/js/views/today.js", "/js/views/history.js", "/js/views/calendar.js", "/js/views/progress.js", "/js/views/diet.js", "/js/views/data.js", "/js/views/settings.js",
   "/vendor/chart.umd.js", "/vendor/marked.umd.js", "/manifest.webmanifest", "/favicon.svg"];

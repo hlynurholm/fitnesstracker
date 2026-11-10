@@ -215,7 +215,15 @@ class DayView {
 
     c.appendChild(this.weekStrip());
     // Beyond the concrete planning window there is no session to show yet, only an outlook.
-    if (day.horizon && day.horizon !== "concrete" && !day.moved && !this.data.workouts.length) { c.appendChild(this.outlookCard()); return; }
+    if (day.horizon && day.horizon !== "concrete" && !day.moved && !this.data.workouts.length) {
+      c.appendChild(this.outlookCard());
+      const p = this.data.projection;
+      if (p && p.lines.length) c.appendChild(h("div", { class: "card" },
+        h("div", { class: "card-title" }, h("h3", null, "If things go to plan"), h("span", { class: "muted small" }, "projection")),
+        h("div", null, p.lines.map((l) => h("div", { class: "list-item" }, h("div", null, h("div", { class: "title" }, l.label), l.basis ? h("div", { class: "sub" }, l.basis) : null), h("div", { class: "val" }, l.value)))),
+        p.note ? h("p", { class: "muted small", style: { margin: ".7rem 0 0" } }, p.note) : null));
+      return;
+    }
     c.appendChild(this.bodyWeightCard());
     for (const card of this.sessionCards()) c.appendChild(card);
 

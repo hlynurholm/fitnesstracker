@@ -52,6 +52,7 @@ private struct DayContent: View {
                 // Beyond the concrete planning window there is no session yet, only an outlook.
                 if Outlook(day.horizon) != .concrete, !day.moved, (model.data?.workouts ?? []).isEmpty {
                     OutlookCard(day: day).id(model.date)
+                    if let projection = model.data?.projection, !projection.lines.isEmpty { ProjectionCard(projection: projection) }
                 } else {
                 VStack(alignment: .leading, spacing: Theme.Space.m) {
                     if API.shared.offline { Banner("Offline: showing the last saved copy of this day. New entries are saved on the phone and synced later.") }
@@ -211,6 +212,25 @@ private struct DayContent: View {
 }
 
 // MARK: Pieces
+
+/// Projected weights, paces and body weight for an estimated day, each with what it is based on.
+private struct ProjectionCard: View {
+    let projection: Projection
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            CardTitle("If things go to plan", note: "projection")
+            Divided {
+                ForEach(projection.lines, id: \.self) { line in
+                    Row(title: line.label, subtitle: line.basis) {
+                        Text(line.value).font(Theme.Typography.callout.weight(.semibold).monospacedDigit()).multilineTextAlignment(.trailing)
+                    }
+                }
+            }
+            if let note = projection.note { Text(note).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
+        }
+        .card()
+    }
+}
 
 /// A day past the concrete plan: the likely session type for an estimate, or nothing at all further out.
 private struct OutlookCard: View {

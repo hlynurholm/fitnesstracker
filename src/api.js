@@ -4,6 +4,7 @@ import { getSettings, setSettings, getOverrides, ensureWorkout, rowWithJson, par
 import { parseUpload } from "./parsers/index.js";
 import { buildSummaryMarkdown } from "./summary.js";
 import { syncGarmin, garminConfigured } from "./garmin.js";
+import { projectDay } from "./projection.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{6,80}$/;
@@ -351,7 +352,24 @@ async function getDay(env, date, settings) {
     const r = resolveDay(d, settings);
     week.push({ date: d, templateKey: r.templateKey, kind: r.template.kind, name: r.template.name, moved: r.moved, horizon: r.horizon, workouts: weekRows.filter((w) => w.date === d) });
   }
-  return { day, workouts, active, last, body, tests, week, today: todayLocal() };
+  // Estimated days carry a projection instead of a session: where the numbers would be if things go to plan.
+  const projection = day.horizon === "estimate" && !workouts.length ? projectDay(day, settings, await projectionHistory(env, day), todayLocal()) : null;
+  return { day, workouts, active, last, body, tests, week, projection, today: todayLocal() };
+}
+
+// The little history a projection needs: heaviest set per session for the day's lifts, the latest 5 km test, recent weigh-ins.
+async function projectionHistory(env, day) {
+  const keys = day.plan.map((e) => e.key);
+  const lifts = {};
+  if (keys.length) {
+    const { results } = await env.DB.prepare(
+      `SELECT s.exercise_key, w.date, MAX(s.weight_kg) AS top FROM sets s JOIN workouts w ON w.id = s.workout_id
+       WHERE s.done = 1 AND s.weight_kg > 0 AND s.exercise_key IN (${placeholders(keys.length)}) GROUP BY s.exercise_key, w.date ORDER BY w.date`).bind(...keys).all();
+    for (const r of results) (lifts[r.exercise_key] = lifts[r.exercise_key] || []).push({ date: r.date, top: r.top });
+  }
+  const fiveK = await env.DB.prepare("SELECT date, value FROM tests WHERE test_key = 'five_k_sec' AND value > 0 ORDER BY date DESC LIMIT 1").first();
+  const { results: weighIns } = await env.DB.prepare("SELECT date, weight_kg FROM body_metrics WHERE weight_kg IS NOT NULL ORDER BY date DESC LIMIT 14").all();
+  return { lifts, fiveK: fiveK || null, weighIns };
 }
 
 // ---------- schedule ----------

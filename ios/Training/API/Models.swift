@@ -129,6 +129,14 @@ struct DayResponse: Decodable {
     var tests: [TestResult]?
     var week: [WeekDay]
     var today: String
+    /// Estimated days only: where the numbers would be if things go to plan.
+    var projection: Projection? = nil
+}
+
+struct Projection: Decodable {
+    struct Line: Decodable, Hashable { let label: String; let value: String; let basis: String? }
+    let lines: [Line]
+    let note: String?
 }
 
 struct DayInfo: Decodable {

@@ -57,9 +57,13 @@ private struct DayContent: View {
                 VStack(alignment: .leading, spacing: Theme.Space.m) {
                     if API.shared.offline { Banner("Offline: showing the last saved copy of this day. New entries are saved on the phone and synced later.") }
                     header(day)
-                    ForEach(model.data?.recorded ?? []) { RunCard(activity: $0) }
                     WeightCard(model: model)
+                    // What the watch recorded, in full: map, charts, splits and zones. It leads the day once the
+                    // session is done or was the run itself, and follows the session while that is still being logged.
+                    let runFirst = model.template.kind == "run" || model.workout?.status == "done"
+                    if runFirst { recorded }
                     session(day)
+                    if !runFirst { recorded }
                     others
                     if day.testWeek { TestsCard(model: model) }
                     if model.template.kind != "lift" { ChecklistCard(model: model, block: "knee", title: model.program.kneeRoutine.title, note: (model.program.kneeRoutine.note ?? "") + (model.template.kind == "run" ? " Optional after the run." : ""), items: model.program.kneeRoutine.items.map { .init(id: $0.id, text: $0.text) }) }
@@ -192,6 +196,10 @@ private struct DayContent: View {
             }
         }
         .card()
+    }
+
+    private var recorded: some View {
+        ForEach(model.data?.recorded ?? []) { RunDetail(id: $0.id, embedded: true) }
     }
 
     @ViewBuilder

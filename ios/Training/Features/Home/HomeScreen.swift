@@ -575,15 +575,61 @@ private struct NutritionCard: View {
 private struct FactsCard: View {
     let model: HomeModel
     var body: some View {
+        let facts = model.facts
+        let wide = facts.filter { $0.progress != nil }, small = facts.filter { $0.progress == nil }
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: .facts)
-            ForEach(Array(model.facts.enumerated()), id: \.offset) { _, fact in
-                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-                    Image(systemName: fact.icon).font(.footnote).foregroundStyle(CardKind.facts.tint).frame(width: 20)
-                    Text(fact.text).font(Theme.Typography.callout).fixedSize(horizontal: false, vertical: true)
+            // Comparisons with a famous distance: big number on the left, how far along it on a ring.
+            ForEach(wide) { fact in
+                HStack(spacing: Theme.Space.m) {
+                    FactText(fact: fact, big: true)
+                    Spacer(minLength: 0)
+                    ZStack {
+                        ProgressRing(progress: fact.progress ?? 0, color: fact.tint, size: 58)
+                        Image(systemName: fact.icon).font(.body.weight(.semibold)).foregroundStyle(fact.tint)
+                    }
                 }
+                .factTile(fact.tint)
+            }
+            // Records, two to a row.
+            ForEach(Array(stride(from: 0, to: small.count, by: 2)), id: \.self) { i in
+                HStack(spacing: Theme.Space.s) {
+                    ForEach(small[i..<min(i + 2, small.count)]) { fact in
+                        FactText(fact: fact).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).factTile(fact.tint)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true) // both tiles as tall as the taller one
             }
         }
+    }
+}
+
+private struct FactText: View {
+    let fact: Fact
+    var big = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: Theme.Space.xs) {
+                if !big { Image(systemName: fact.icon).font(.caption.weight(.semibold)) }
+                Text(fact.label.uppercased()).font(Theme.Typography.label).lineLimit(1).minimumScaleFactor(0.6)
+            }
+            .foregroundStyle(fact.tint)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(fact.value).font(big ? Theme.Typography.timer : Theme.Typography.numeral).lineLimit(1).minimumScaleFactor(0.6)
+                if !fact.unit.isEmpty { Text(fact.unit).font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted) }
+            }
+            if !fact.detail.isEmpty {
+                Text(fact.detail).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private extension View {
+    /// A tile washed in the fact's own colour.
+    func factTile(_ tint: Color) -> some View {
+        padding(Theme.Space.m).background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
     }
 }
 

@@ -345,20 +345,38 @@ final class HomeModel {
     // MARK: Fun facts
 
     /// A few records and comparisons from everything imported so far.
-    var facts: [(icon: String, text: String)] {
-        var out: [(String, String)] = []
+    var facts: [Fact] {
+        var out: [Fact] = []
         let dates = days.keys.sorted()
         func best(_ key: String, lowest: Bool = false) -> (date: String, value: Double)? {
             let all = dates.compactMap { d in value(key, on: d).map { (d, $0) } }.filter { $0.1 > 0 }
             return lowest ? all.min { $0.1 < $1.1 } : all.max { $0.1 < $1.1 }
         }
+        /// "31 % of X" until the first full one, then "1.4 times X".
+        func share(_ times: Double, part: String, whole: String) -> String {
+            times < 1 ? "\(Fmt.whole(times * 100)) % \(part)" : "\(String(format: "%.1f", times)) times \(whole)"
+        }
         let steps = dates.compactMap { value("movement.steps.value", on: $0) }
         if !steps.isEmpty {
             let km = dates.compactMap { value("movement.steps.distanceInMeters", on: $0) }.reduce(0, +) / 1000
-            // Route 1 around Iceland is 1,322 km.
-            out.append(("figure.walk", "\(Fmt.whole(steps.reduce(0, +))) steps in \(steps.count) days" + (km > 0 ? ", about \(Fmt.whole(km)) km. That is \(Fmt.whole(km / 1322 * 100)) % of the Ring Road." : ".")))
+            let total = "\(Fmt.whole(steps.reduce(0, +))) steps"
+            if km > 0 {
+                let laps = km / 1322 // Route 1 around Iceland is 1,322 km.
+                out.append(Fact(id: "walked", icon: "figure.walk", tint: Theme.Palette.accent, label: "Walked in \(steps.count) days", value: Fmt.whole(km), unit: "km",
+                                detail: share(laps, part: "of the Ring Road around Iceland", whole: "around Iceland on the Ring Road") + ", \(total)", progress: laps.truncatingRemainder(dividingBy: 1)))
+            } else {
+                out.append(Fact(id: "walked", icon: "figure.walk", tint: Theme.Palette.accent, label: "Steps in \(steps.count) days", value: Fmt.whole(steps.reduce(0, +))))
+            }
         }
-        if let b = best("movement.steps.value") { out.append(("trophy.fill", "Most steps in a day: \(Fmt.whole(b.value)) on \(Day.label(b.date)).")) }
+        let climbed = dates.compactMap { value("movement.floorsAscended.distanceInMeters", on: $0) }.reduce(0, +)
+        if climbed > 0 {
+            let peaks = climbed / 2110 // Hvannadalshnúkur, Iceland's highest peak, is 2,110 m.
+            out.append(Fact(id: "climbed", icon: "mountain.2.fill", tint: Theme.Palette.ok, label: "Climbed on stairs and hills", value: Fmt.whole(climbed), unit: "m",
+                            detail: share(peaks, part: "of the way up Hvannadalshnúkur", whole: "up Hvannadalshnúkur") + ", Iceland's highest peak", progress: peaks.truncatingRemainder(dividingBy: 1)))
+        }
+        if let b = best("movement.steps.value") {
+            out.append(Fact(id: "mostSteps", icon: "trophy.fill", tint: Theme.Palette.energy, label: "Most steps in a day", value: Fmt.whole(b.value), detail: Day.label(b.date)))
+        }
         // Steps goal streak, counting back from today or yesterday.
         var streak = 0
         for back in 0..<dates.count {
@@ -366,16 +384,34 @@ final class HomeModel {
             if let v = value("movement.steps.value", on: d), let g = value("movement.steps.goal", on: d), v >= g { streak += 1; continue }
             if back > 0 { break } // today is not over yet, so it cannot break a streak
         }
-        if streak >= 2 { out.append(("flame.fill", "Step goal reached \(streak) days in a row.")) }
-        let climbed = dates.compactMap { value("movement.floorsAscended.distanceInMeters", on: $0) }.reduce(0, +)
-        // Hvannadalshnúkur, Iceland's highest peak, is 2,110 m.
-        if climbed > 0 { out.append(("mountain.2.fill", "\(Fmt.whole(climbed)) m climbed on stairs and hills, \(String(format: "%.1f", climbed / 2110)) times up Hvannadalshnúkur.")) }
-        if let b = best("heartRate.restingValue", lowest: true) { out.append(("heart.fill", "Lowest resting heart rate: \(Fmt.whole(b.value)) bpm on \(Day.label(b.date)).")) }
-        if let b = best("sleep.sleepTimeSeconds") { out.append(("moon.zzz.fill", "Longest night: \(Fmt.hours(b.value)) on \(Day.label(b.date)).")) }
-        if let avg = average("sleep.sleepTimeSeconds", 7) { out.append(("bed.double.fill", "Average sleep over the last week: \(Fmt.hours(avg)) a night.")) }
-        if let b = best("hrv.lastNightAvg") { out.append(("waveform.path.ecg", "Best overnight HRV: \(Fmt.whole(b.value)) ms on \(Day.label(b.date)).")) }
-        return out.map { (icon: $0.0, text: $0.1) }
+        if streak >= 2 { out.append(Fact(id: "streak", icon: "flame.fill", tint: Theme.Palette.danger, label: "Step goal streak", value: "\(streak)", unit: "days", detail: "in a row")) }
+        if let b = best("heartRate.restingValue", lowest: true) {
+            out.append(Fact(id: "restingHR", icon: "heart.fill", tint: Theme.Palette.heart, label: "Lowest resting HR", value: Fmt.whole(b.value), unit: "bpm", detail: Day.label(b.date)))
+        }
+        if let b = best("hrv.lastNightAvg") {
+            out.append(Fact(id: "hrv", icon: "waveform.path.ecg", tint: Theme.Palette.calm, label: "Best overnight HRV", value: Fmt.whole(b.value), unit: "ms", detail: Day.label(b.date)))
+        }
+        if let b = best("sleep.sleepTimeSeconds") {
+            out.append(Fact(id: "longestNight", icon: "moon.zzz.fill", tint: Theme.Palette.sleep, label: "Longest night", value: Fmt.hours(b.value), detail: Day.label(b.date)))
+        }
+        if let avg = average("sleep.sleepTimeSeconds", 7) {
+            out.append(Fact(id: "sleepWeek", icon: "bed.double.fill", tint: Theme.Palette.sleep, label: "Average night", value: Fmt.hours(avg), detail: "last 7 days"))
+        }
+        return out
     }
+}
+
+/// One record or comparison for the fun facts widget: a big number with what it is and when it happened.
+struct Fact: Identifiable {
+    let id: String
+    let icon: String
+    let tint: Color
+    let label: String
+    let value: String
+    var unit = ""
+    var detail = ""
+    /// How far along a famous distance this is, 0 to 1. A fact with one is drawn wide, with a ring.
+    var progress: Double? = nil
 }
 
 extension Fmt {

@@ -44,12 +44,18 @@ Live Activity push updates sent by the Worker.
 
 ## Dashboard
 
-Home is a grid of cards: watch metrics from `GET /api/metrics`, plus training, weight and nutrition from the data the
-other tabs use. `HomeModel.swift` holds the card list (`CardKind`), what each watch metric card shows (`MetricSpec`,
-keyed by Garmin's field names) and the layout. Customize (top right) reorders cards, sets each to half or full width
-and hides them; the layout is saved on the phone. A card with no data stays out of the grid until there is some.
-To add a card for another metric, add a `CardKind` case and a `MetricSpec` entry. "Everything from your watch" lists
-every stored value, including those without a card.
+Home is a grid of widgets: watch metrics from `GET /api/metrics`, plus training, weight and nutrition from the data
+the other tabs use. `HomeModel.swift` holds the widget list (`CardKind`), what each watch metric widget shows
+(`MetricSpec`, keyed by Garmin's field names) and the layout, which is saved on the phone.
+
+- Touch and hold a widget: half or full width, the range of days its chart covers (2 days to 6 months, per widget),
+  "use this range for all widgets" (asks twice), remove.
+- The grid button enters edit mode: drag a widget to move it, drag or tap the handle in its bottom right corner to
+  resize it, tap the minus in its top left corner to remove it, and use the plus button to add widgets back.
+- Ranges over 45 days are drawn as weekly averages. A range longer than the stored history asks the server once for
+  older Garmin data.
+- A widget with no data stays out of the grid until there is some. To add a widget for another metric, add a
+  `CardKind` case and a `MetricSpec` entry. "Everything from your watch" lists every stored value.
 
 ## Automatic data
 

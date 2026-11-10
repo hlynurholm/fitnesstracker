@@ -1,18 +1,28 @@
 import SwiftUI
 
-/// The landing page: a grid of data cards from the watch and from training. Which cards show, in what order and
-/// at what width, is set in Customize and saved on the phone.
+/// The landing page: a grid of data widgets from the watch and from training.
+///
+/// Normal mode: touch and hold a widget for its settings (width, range of days shown, remove).
+/// Edit mode (the grid button): widgets can be dragged to a new place, resized with the handle in their bottom
+/// right corner, removed with the minus in their top left corner, and added with the plus button.
+/// The layout is saved on the phone.
 struct HomeScreen: View {
     let openToday: () -> Void
     @State private var model = HomeModel()
-    @State private var customizing = false
+    @State private var editing = false
+    @State private var adding = false
+    @State private var dragging: CardKind?
+    /// "Use this range for all widgets" asks twice: first this dialog, then an alert.
+    @State private var askApply: Int?
+    @State private var confirmApply: Int?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Screen {
-            Text(Day.label(model.today, year: true)).font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted).padding(.horizontal, Theme.Space.xs)
+            Text(editing ? "Drag to move. Use the corner handle to resize." : Day.label(model.today, year: true))
+                .font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted).padding(.horizontal, Theme.Space.xs)
             if let error = model.error, model.dash == nil { ErrorCard(message: error) { await model.load() } }
-            if model.loaded, !model.hasWatchData { waiting }
+            if model.loaded, !model.hasWatchData, !editing { waiting }
             ForEach(model.rows, id: \.self) { row in
                 if row.count == 1, row[0].wide || row[0].kind.alwaysWide {
                     card(row[0], wide: true)
@@ -29,16 +39,41 @@ struct HomeScreen: View {
         .navigationTitle("Home")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                NavigationLink { SettingsScreen() } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
+                if editing {
+                    Button("Done") { withAnimation(.snappy) { editing = false; dragging = nil } }.fontWeight(.semibold)
+                } else {
+                    NavigationLink { SettingsScreen() } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { customizing = true } label: { Image(systemName: "square.grid.2x2") }.accessibilityLabel("Customize dashboard")
+                if editing {
+                    Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add widget")
+                } else {
+                    Button { startEditing() } label: { Image(systemName: "square.grid.2x2") }.accessibilityLabel("Edit dashboard")
+                }
             }
         }
-        .sheet(isPresented: $customizing) { CustomizeSheet(model: model) }
+        .sheet(isPresented: $adding) { AddWidgetSheet(model: model).presentationDetents([.medium, .large]) }
+        .confirmationDialog("Use \(RangeOption.label(askApply ?? 0)) for all widgets?", isPresented: Binding(get: { askApply != nil }, set: { if !$0 { askApply = nil } }), titleVisibility: .visible, presenting: askApply) { days in
+            Button("Apply to all widgets") {
+                // Second check, shown once this dialog has closed.
+                Task { try? await Task.sleep(for: .milliseconds(400)); confirmApply = days }
+            }
+        } message: { _ in Text("Every widget with a chart will show this range.") }
+        .alert("Are you sure?", isPresented: Binding(get: { confirmApply != nil }, set: { if !$0 { confirmApply = nil } }), presenting: confirmApply) { days in
+            Button("Yes, change all widgets", role: .destructive) { withAnimation { model.applyRangeToAll(days) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { days in
+            Text("This replaces the range on \(model.layout.filter { $0.kind.hasRange && !$0.hidden }.count) widgets with \(RangeOption.label(days)). Ranges you set one by one will be lost.")
+        }
         .task { await model.load() }
         .refreshable { await model.load() }
         .onChange(of: scenePhase) { _, phase in if phase == .active, model.loaded { Task { await model.load() } } }
+    }
+
+    private func startEditing() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation(.snappy) { editing = true }
     }
 
     /// Shown until the first import from Garmin has arrived.
@@ -52,24 +87,169 @@ struct HomeScreen: View {
         .card()
     }
 
+    // MARK: One widget
+
     @ViewBuilder
     private func card(_ setting: CardSetting, wide: Bool) -> some View {
-        Group {
-            switch setting.kind {
-            case .today: TodayCard(model: model, open: openToday)
-            case .week: WeekCard(model: model)
-            case .weight: WeightCard(model: model, wide: wide)
-            case .nutrition: NutritionCard(model: model)
-            case .sleep: SleepCard(model: model, wide: wide)
-            case .intensity: IntensityCard(model: model, wide: wide)
-            case .facts: FactsCard(model: model)
-            case .all: AllMetricsCard(model: model)
-            default: if let spec = MetricSpec.all[setting.kind] { MetricCard(model: model, kind: setting.kind, spec: spec, wide: wide) }
+        let surface = content(setting, wide: wide)
+            .allowsHitTesting(!editing) // while editing, touches move and resize the widget instead
+            .padding(Theme.Space.l)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .contentShape(.dragPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        if editing {
+            surface
+                .opacity(dragging == setting.kind ? 0.4 : 1)
+                .overlay(alignment: .topLeading) { removeButton(setting) }
+                .overlay(alignment: .bottomTrailing) { if !setting.kind.alwaysWide { resizeHandle(setting) } }
+                .modifier(Wiggle())
+                .onDrag { dragging = setting.kind; return NSItemProvider(object: setting.id as NSString) }
+                .onDrop(of: [.text], delegate: ReorderDrop(target: setting.kind, model: model, dragging: $dragging))
+        } else {
+            surface.contextMenu { menu(setting) }
+        }
+    }
+
+    @ViewBuilder
+    private func content(_ setting: CardSetting, wide: Bool) -> some View {
+        switch setting.kind {
+        case .today: TodayCard(model: model, open: openToday)
+        case .week: WeekCard(model: model)
+        case .weight: WeightCard(model: model, setting: setting, wide: wide)
+        case .nutrition: NutritionCard(model: model, setting: setting, wide: wide)
+        case .sleep: SleepCard(model: model, setting: setting, wide: wide)
+        case .intensity: IntensityCard(model: model, setting: setting, wide: wide)
+        case .facts: FactsCard(model: model)
+        case .all: AllMetricsCard(model: model)
+        default: if let spec = MetricSpec.all[setting.kind] { MetricCard(model: model, setting: setting, spec: spec, wide: wide) }
+        }
+    }
+
+    /// Minus in the top left corner: takes the widget off the dashboard. It can be added back with the plus button.
+    private func removeButton(_ setting: CardSetting) -> some View {
+        Button { withAnimation(.snappy) { model.update(setting.kind) { $0.hidden = true } } } label: {
+            Image(systemName: "minus").font(.caption.weight(.heavy)).foregroundStyle(.white)
+                .frame(width: 26, height: 26).background(Theme.Palette.rest, in: Circle())
+                .overlay(Circle().stroke(Theme.Palette.background, lineWidth: 2))
+                .padding(8).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).offset(x: -14, y: -14)
+        .accessibilityLabel("Remove \(setting.kind.title)")
+    }
+
+    /// Handle in the bottom right corner: drag it outwards for full width, inwards for half, or tap to switch.
+    private func resizeHandle(_ setting: CardSetting) -> some View {
+        let set = { (wide: Bool) in
+            guard wide != setting.wide else { return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(.snappy) { model.update(setting.kind) { $0.wide = wide } }
+        }
+        return Image(systemName: setting.wide ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+            .font(.caption.weight(.bold)).foregroundStyle(.white)
+            .frame(width: 30, height: 30).background(Theme.Palette.accent, in: Circle())
+            .overlay(Circle().stroke(Theme.Palette.background, lineWidth: 2))
+            .padding(8).contentShape(Rectangle())
+            .onTapGesture { set(!setting.wide) }
+            .highPriorityGesture(DragGesture(minimumDistance: 12).onEnded { drag in
+                if drag.translation.width > 24 { set(true) } else if drag.translation.width < -24 { set(false) }
+            })
+            .offset(x: 12, y: 12)
+            .accessibilityLabel(setting.wide ? "Make \(setting.kind.title) half width" : "Make \(setting.kind.title) full width")
+            .accessibilityAddTraits(.isButton)
+    }
+
+    /// Settings for one widget, on touch and hold.
+    @ViewBuilder
+    private func menu(_ setting: CardSetting) -> some View {
+        if !setting.kind.alwaysWide {
+            Picker("Width", selection: Binding(get: { setting.wide }, set: { wide in withAnimation(.snappy) { model.update(setting.kind) { $0.wide = wide } } })) {
+                Label("Half width", systemImage: "rectangle.split.2x1").tag(false)
+                Label("Full width", systemImage: "rectangle").tag(true)
             }
         }
-        .padding(Theme.Space.l)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        if setting.kind.hasRange {
+            Menu {
+                Picker("Range", selection: Binding(get: { setting.range }, set: { days in withAnimation { model.setRange(setting.kind, days) } })) {
+                    Text("Default").tag(Int?.none)
+                    ForEach(RangeOption.all) { Text("Last \($0.label)").tag(Int?.some($0.days)) }
+                }
+            } label: {
+                Label("Range: \(setting.range.map { RangeOption.label($0) } ?? "default")", systemImage: "calendar")
+            }
+            if let days = setting.range {
+                Button { askApply = days } label: { Label("Use \(RangeOption.label(days)) for all widgets", systemImage: "square.on.square") }
+            }
+        }
+        Divider()
+        Button { startEditing() } label: { Label("Edit dashboard", systemImage: "square.grid.2x2") }
+        Button(role: .destructive) { withAnimation(.snappy) { model.update(setting.kind) { $0.hidden = true } } } label: { Label("Remove widget", systemImage: "minus.circle") }
+    }
+}
+
+/// Moves the dragged widget to the place of the widget it is dragged over.
+private struct ReorderDrop: DropDelegate {
+    let target: CardKind
+    let model: HomeModel
+    @Binding var dragging: CardKind?
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging != target,
+              let from = model.layout.firstIndex(where: { $0.kind == dragging }), let to = model.layout.firstIndex(where: { $0.kind == target }) else { return }
+        withAnimation(.snappy) { model.layout.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to) }
+    }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func performDrop(info: DropInfo) -> Bool { dragging = nil; return true }
+}
+
+/// The small rocking motion of widgets in edit mode.
+private struct Wiggle: ViewModifier {
+    @State private var on = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        content
+            .rotationEffect(.degrees(reduceMotion ? 0 : on ? 0.45 : -0.45))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.16).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = true }
+    }
+}
+
+/// The widgets that are not on the dashboard, to add back.
+private struct AddWidgetSheet: View {
+    let model: HomeModel
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        let hidden = model.layout.filter(\.hidden)
+        NavigationStack {
+            ScrollView {
+                if hidden.isEmpty {
+                    Text("Every widget is already on your dashboard.").font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted).padding(.top, 40)
+                }
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Space.m), GridItem(.flexible())], spacing: Theme.Space.m) {
+                    ForEach(hidden) { card in
+                        Button { withAnimation(.snappy) { model.add(card.kind) } } label: {
+                            VStack(alignment: .leading, spacing: Theme.Space.s) {
+                                HStack {
+                                    Image(systemName: card.kind.icon).font(.title3).foregroundStyle(card.kind.tint)
+                                    Spacer()
+                                    Image(systemName: "plus.circle.fill").font(.title3).foregroundStyle(Theme.Palette.ok)
+                                }
+                                Text(card.kind.title).font(Theme.Typography.headline).foregroundStyle(Theme.Palette.text).multilineTextAlignment(.leading)
+                                Text(model.hasData(card.kind) ? " " : "no data yet").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+                            }
+                            .padding(Theme.Space.m).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Add \(card.kind.title)")
+                    }
+                }
+                .padding(Theme.Space.l)
+            }
+            .screenBackground()
+            .navigationTitle("Add widgets").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
     }
 }
 
@@ -124,9 +304,10 @@ private func dayNote(_ date: String, today: String) -> String? {
 /// Generic card for one daily metric: latest value, caption, and a chart of the last two weeks (a month when wide).
 private struct MetricCard: View {
     let model: HomeModel
-    let kind: CardKind
+    let setting: CardSetting
     let spec: MetricSpec
     let wide: Bool
+    private var kind: CardKind { setting.kind }
 
     private func show(_ v: Double) -> String { spec.digits == 0 ? Fmt.whole(v * spec.scale) : String(format: "%.\(spec.digits)f", v * spec.scale) }
 
@@ -134,7 +315,8 @@ private struct MetricCard: View {
         let latest = model.latest(spec.key)
         let goal = latest.flatMap { l in spec.goalKey.flatMap { model.value($0, on: l.date) } }
         let sparse = kind == .bodyFat || kind == .leanMass // weighed now and then, so show a longer stretch
-        let chart = Spark(values: model.series(spec.key, sparse ? (wide ? 120 : 60) : wide ? 30 : 14).map { $0.map { $0 * spec.scale } }, style: spec.style, color: spec.tint, goal: goal.map { $0 * spec.scale }, height: wide ? 72 : 44)
+        let span = setting.range ?? (sparse ? (wide ? 120 : 60) : wide ? 30 : 14)
+        let chart = Spark(values: model.chart(span) { day in model.value(spec.key, on: day).map { $0 * spec.scale } }, style: spec.style, color: spec.tint, goal: goal.map { $0 * spec.scale }, height: wide ? 72 : 44)
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: kind) {
                 if let latest, let goal, goal > 0 { ProgressRing(progress: latest.value / goal, color: spec.tint, size: 22) }
@@ -157,7 +339,7 @@ private struct MetricCard: View {
         var parts: [String] = []
         if let latest, let note = dayNote(latest.date, today: model.today) { parts.append(note) }
         if let goal, goal > 0 { parts.append("goal \(show(goal))") }
-        if kind == .bodyFat || kind == .leanMass { parts.append("from your scale") } else if let avg = model.average(spec.key, 7) { parts.append("7-day avg \(show(avg))") }
+        if kind == .bodyFat || kind == .leanMass { parts.append("from your scale") } else if let avg = model.average(spec.key, setting.range ?? 7) { parts.append("\(setting.range.map { RangeOption.label($0) } ?? "7-day") avg \(show(avg))") }
         if let extra = spec.extra, let latest, let v = model.value(extra.key, on: latest.date) { parts.append("\(extra.label) \(show(v))") }
         if kind == .hrv, let status = model.latestText("hrv.status") { parts.append(status.lowercased()) }
         if kind == .stress, let q = model.latestText("stress.qualifier") { parts.append(q.replacingOccurrences(of: "_", with: " ")) }
@@ -167,6 +349,7 @@ private struct MetricCard: View {
 
 private struct SleepCard: View {
     let model: HomeModel
+    let setting: CardSetting
     let wide: Bool
     var body: some View {
         let night = model.latest("sleep.sleepTimeSeconds")
@@ -179,10 +362,11 @@ private struct SleepCard: View {
             HStack(alignment: .bottom, spacing: Theme.Space.l) {
                 VStack(alignment: .leading, spacing: 2) {
                     BigValue(value: night.map { Fmt.hours($0.value) } ?? "–")
-                    Caption([night.flatMap { dayNote($0.date, today: model.today) } ?? "last night", model.average("sleep.sleepTimeSeconds", 7).map { "7-day avg \(Fmt.hours($0))" }].compactMap { $0 }.joined(separator: " · "))
+                    Caption([night.flatMap { dayNote($0.date, today: model.today) } ?? "last night", model.average("sleep.sleepTimeSeconds", setting.range ?? 7).map { "\(setting.range.map { RangeOption.label($0) } ?? "7-day") avg \(Fmt.hours($0))" }].compactMap { $0 }.joined(separator: " · "))
                 }
-                if wide { Spark(values: model.series("sleep.sleepTimeSeconds", 14).map { $0.map { $0 / 3600 } }, style: .bars, color: Theme.Palette.sleep, height: 56) }
+                if wide { nights(56) }
             }
+            if !wide { nights(44) }
             if stages.contains(where: { $0.1 > 0 }) {
                 SegmentBar(parts: stages.map { ($0.1, $0.2) })
                 HStack(spacing: Theme.Space.m) {
@@ -194,11 +378,16 @@ private struct SleepCard: View {
             }
         }
     }
+    /// Hours slept per night over the widget's range (weekly averages for long ranges).
+    private func nights(_ height: CGFloat) -> some View {
+        Spark(values: model.chart(setting.range ?? 14) { day in model.value("sleep.sleepTimeSeconds", on: day).map { $0 / 3600 } }, style: .bars, color: Theme.Palette.sleep, height: height)
+    }
 }
 
 /// Minutes this week towards Garmin's weekly goal, where a vigorous minute counts twice.
 private struct IntensityCard: View {
     let model: HomeModel
+    let setting: CardSetting
     let wide: Bool
     var body: some View {
         let monday = Day.monday(of: model.today)
@@ -207,7 +396,7 @@ private struct IntensityCard: View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: .intensity) { ProgressRing(progress: week / max(goal, 1), color: CardKind.intensity.tint, size: 22) }
             BigValue(value: Fmt.whole(week), unit: "min")
-            Spark(values: model.series(wide ? 30 : 14) { model.intensity(on: $0) }, style: .bars, color: CardKind.intensity.tint, height: wide ? 72 : 44)
+            Spark(values: model.chart(setting.range ?? (wide ? 30 : 14)) { model.intensity(on: $0) }, style: .bars, color: CardKind.intensity.tint, height: wide ? 72 : 44)
             Caption("this week · goal \(Fmt.whole(goal))")
         }
     }
@@ -274,6 +463,7 @@ private struct WeekCard: View {
 
 private struct WeightCard: View {
     let model: HomeModel
+    let setting: CardSetting
     let wide: Bool
     var body: some View {
         let byDay = Dictionary((model.dash?.body ?? []).compactMap { b in b.weight_kg.map { (b.date, $0) } }, uniquingKeysWith: { a, _ in a })
@@ -284,7 +474,7 @@ private struct WeightCard: View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: .weight)
             BigValue(value: avg.map { String(format: "%.1f", $0) } ?? "–", unit: "kg")
-            Spark(values: model.series(wide ? 60 : 30) { byDay[$0] }, style: .line, color: CardKind.weight.tint, height: wide ? 72 : 44)
+            Spark(values: model.chart(setting.range ?? (wide ? 60 : 30)) { byDay[$0] }, style: .line, color: CardKind.weight.tint, height: wide ? 72 : 44)
             Caption([recent.isEmpty ? latestDate.map { "last weighed \(Day.short($0))" } : "7-day avg", goal.flatMap { g in avg.map { String(format: "%.1f kg to goal", $0 - g) } }].compactMap { $0 }.joined(separator: " · "))
         }
     }
@@ -292,14 +482,18 @@ private struct WeightCard: View {
 
 private struct NutritionCard: View {
     let model: HomeModel
+    let setting: CardSetting
+    let wide: Bool
     var body: some View {
         let program = AppModel.shared.program
         let day = model.dash?.nutrition.last { $0.date <= model.today }
+        let byDay = Dictionary((model.dash?.nutrition ?? []).compactMap { n in n.calories.map { (n.date, $0) } }, uniquingKeysWith: { a, _ in a })
         let kcalTarget = model.dash?.settings.number("calorie_target") ?? program?.nutrition.calories ?? 0
         let proteinTarget = model.dash?.settings.number("protein_target") ?? program?.nutrition.proteinG ?? 0
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: .nutrition) { if let kcal = day?.calories, kcalTarget > 0 { ProgressRing(progress: kcal / kcalTarget, color: CardKind.nutrition.tint, size: 22) } }
             BigValue(value: Fmt.whole(day?.calories), unit: "kcal")
+            Spark(values: model.chart(setting.range ?? (wide ? 30 : 14)) { date in byDay[date] }, style: .bars, color: CardKind.nutrition.tint, goal: kcalTarget > 0 ? kcalTarget : nil, height: wide ? 72 : 44)
             Caption([day.flatMap { dayNote($0.date, today: model.today) }, kcalTarget > 0 ? "target \(Fmt.whole(kcalTarget))" : nil,
                      day?.protein_g.map { "protein \(Fmt.whole($0)) of \(Fmt.whole(proteinTarget)) g" }].compactMap { $0 }.joined(separator: " · "))
         }
@@ -349,46 +543,5 @@ private struct AllMetricsCard: View {
             }
         }
         .tint(Theme.Palette.muted)
-    }
-}
-
-// MARK: Customize
-
-/// Reorder the cards, set each to half or full width, or hide it.
-private struct CustomizeSheet: View {
-    @Bindable var model: HomeModel
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    ForEach($model.layout) { $card in
-                        HStack(spacing: Theme.Space.m) {
-                            Image(systemName: card.kind.icon).foregroundStyle(card.kind.tint).frame(width: 24)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(card.kind.title).font(Theme.Typography.body).foregroundStyle(card.hidden ? Theme.Palette.muted : Theme.Palette.text)
-                                if !model.hasData(card.kind) { Text("no data yet").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
-                            }
-                            Spacer(minLength: 0)
-                            if !card.kind.alwaysWide {
-                                Picker("Width", selection: $card.wide) { Text("Half").tag(false); Text("Full").tag(true) }.pickerStyle(.segmented).frame(width: 112)
-                            }
-                            Button { card.hidden.toggle() } label: {
-                                Image(systemName: card.hidden ? "eye.slash" : "eye").font(.body.weight(.medium))
-                                    .foregroundStyle(card.hidden ? Theme.Palette.muted : Theme.Palette.accent).frame(width: 36, height: 32)
-                            }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel(card.hidden ? "Show \(card.kind.title)" : "Hide \(card.kind.title)")
-                        }
-                    }
-                    .onMove { model.layout.move(fromOffsets: $0, toOffset: $1) }
-                } footer: {
-                    Text("Hold a card and drag to reorder. Two half-width cards in a row sit side by side. Cards without data stay hidden until your watch has some.")
-                }
-                Section { Button("Reset to the default layout", role: .destructive) { model.layout = CardSetting.defaults } }
-            }
-            .navigationTitle("Customize").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-        }
     }
 }

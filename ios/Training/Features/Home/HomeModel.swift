@@ -48,6 +48,19 @@ enum CardKind: String, CaseIterable, Codable {
 
     /// Cards that only make sense across the full width.
     var alwaysWide: Bool { self == .facts || self == .all }
+
+    /// Cards with a chart over time, whose range of days can be chosen.
+    var hasRange: Bool { ![.today, .week, .facts, .all].contains(self) }
+}
+
+/// The ranges a widget's chart can cover.
+struct RangeOption: Identifiable {
+    let days: Int
+    let label: String
+    var id: Int { days }
+    static let all: [RangeOption] = [.init(days: 2, label: "2 days"), .init(days: 7, label: "1 week"), .init(days: 14, label: "2 weeks"),
+                                     .init(days: 30, label: "1 month"), .init(days: 90, label: "3 months"), .init(days: 180, label: "6 months")]
+    static func label(_ days: Int) -> String { all.first { $0.days == days }?.label ?? "\(days) days" }
 }
 
 /// A card that shows one daily metric from the watch: latest value, a short caption and a small chart.
@@ -90,6 +103,8 @@ struct CardSetting: Codable, Identifiable, Hashable {
     var kind: CardKind
     var wide: Bool
     var hidden = false
+    /// Days the card's chart covers. nil is the card's own default.
+    var range: Int? = nil
     var id: String { kind.rawValue }
 
     static let defaults: [CardSetting] = [
@@ -126,7 +141,7 @@ final class HomeModel {
 
     func load() async {
         // The two are independent: training cards still load if the watch data cannot (an older server has no /api/metrics).
-        async let metrics: MetricsResponse = API.shared.get("/api/metrics?days=120", cache: true)
+        async let metrics: MetricsResponse = API.shared.get("/api/metrics?days=190", cache: true)
         async let dashboard: Dashboard = API.shared.get("/api/dashboard", cache: true)
         if let m = try? await metrics { days = Dictionary(m.days.map { ($0.date, $0.data) }, uniquingKeysWith: { _, b in b }) }
         do { dash = try await dashboard; error = nil } catch { self.error = error.localizedDescription }
@@ -168,6 +183,16 @@ final class HomeModel {
         (0..<count).map { value(Day.add(today, -(count - 1 - $0))) }
     }
 
+    /// Values for a chart over `count` days: one per day, or weekly averages once there are too many days to draw each.
+    func chart(_ count: Int, _ value: (String) -> Double?) -> [Double?] {
+        let daily = series(count, value)
+        guard count > 45 else { return daily }
+        return stride(from: 0, to: daily.count, by: 7).map { i in
+            let week = daily[i..<min(i + 7, daily.count)].compactMap { $0 }
+            return week.isEmpty ? nil : week.reduce(0, +) / Double(week.count)
+        }
+    }
+
     func average(_ key: String, _ count: Int) -> Double? {
         let v = series(key, count).compactMap { $0 }
         return v.isEmpty ? nil : v.reduce(0, +) / Double(v.count)
@@ -180,6 +205,41 @@ final class HomeModel {
     }
 
     // MARK: Layout
+
+    func update(_ kind: CardKind, _ change: (inout CardSetting) -> Void) {
+        if let i = layout.firstIndex(where: { $0.kind == kind }) { change(&layout[i]) }
+    }
+
+    /// Sets a widget's range, and asks the server for older watch data when the range reaches past what is stored.
+    func setRange(_ kind: CardKind, _ days: Int?) {
+        update(kind) { $0.range = days }
+        if let days { ensureHistory(days) }
+    }
+
+    /// Gives every widget that has a chart the same range.
+    func applyRangeToAll(_ days: Int) {
+        for i in layout.indices where layout[i].kind.hasRange { layout[i].range = days }
+        ensureHistory(days)
+    }
+
+    /// Shows a hidden widget again, at the end of the dashboard.
+    func add(_ kind: CardKind) {
+        guard let i = layout.firstIndex(where: { $0.kind == kind }) else { return }
+        var card = layout.remove(at: i)
+        card.hidden = false
+        layout.append(card)
+    }
+
+    /// The first import covers about four months. A longer range triggers one deeper fetch from Garmin.
+    private func ensureHistory(_ days: Int) {
+        guard hasWatchData, days > 31, let first = self.days.keys.min(), Day.daysBetween(first, today) < days - 10,
+              UserDefaults.standard.integer(forKey: "historyRequested") < days else { return }
+        UserDefaults.standard.set(days, forKey: "historyRequested")
+        Task {
+            let _: GarminSyncResult? = try? await API.shared.send("POST", "/api/garmin/sync", ["daily_days": days + 5])
+            await load()
+        }
+    }
 
     /// Whether there is anything to show for a card. Cards without data stay out of the grid until there is.
     func hasData(_ kind: CardKind) -> Bool {

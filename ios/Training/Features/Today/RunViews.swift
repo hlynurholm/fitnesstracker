@@ -9,7 +9,6 @@ struct RunBody: View {
     @State private var time = ""
     @State private var hr = ""
     @State private var importing = false
-    @State private var activity: GarminActivity?
     private var runner: IntervalRunner { .shared }
 
     var body: some View {
@@ -41,7 +40,6 @@ struct RunBody: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { Task { await attach(urls) } }
         }
-        .sheet(item: $activity) { ActivitySheet(id: $0.id) }
     }
 
     /// Start button, or the running phase with its countdown. Mirrored on the lock screen by the Live Activity.
@@ -85,10 +83,7 @@ struct RunBody: View {
     private var garmin: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             SectionTitle("Garmin")
-            ForEach(model.workout?.activities ?? []) { a in
-                ActionRow(title: [a.distance_m.map { String(format: "%.2f km", $0 / 1000) }, a.duration_s.map { Fmt.time($0) }, a.avg_pace_s_per_km.map { Fmt.pace($0) }].compactMap { $0 }.joined(separator: " · "),
-                          subtitle: [a.avg_hr.map { "avg HR \(Int($0))" }, a.max_hr.map { "max \(Int($0))" }, a.best_5k_s.map { "best 5 km \(Fmt.time($0))" }].compactMap { $0 }.joined(separator: " · ")) { activity = a }
-            }
+            // The recorded runs themselves are cards at the top of the day.
             Button((model.workout?.activities ?? []).isEmpty ? "Attach the Garmin file for this run" : "Attach another file") { importing = true }.font(Theme.Typography.callout)
             Text("FIT, TCX, GPX or CSV").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
         }
@@ -130,18 +125,6 @@ struct HeartRateZones: View {
                     .background(on ? Theme.Palette.run : Theme.Palette.fill, in: RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))
                 }
             }
-        }
-    }
-}
-
-/// The run page in a sheet, for places that are not inside a navigation stack of their own.
-struct ActivitySheet: View {
-    let id: Int
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            RunScreen(id: id)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Close") { dismiss() } } }
         }
     }
 }

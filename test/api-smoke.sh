@@ -63,7 +63,7 @@ WID=$(echo "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"
 out=$(curl -s -b "$JAR" -F "file=@test/out/run.fit" -F "workout_id=999999" "$BASE/api/uploads"); check "upload with unknown workout_id is a clean 400" '[[ "$out" == *"Unknown workout_id"* ]]'
 # uploads: FIT attached to the run
 out=$(curl -s -b "$JAR" -F "file=@test/out/run.fit" -F "workout_id=$WID" -F "tz_offset_min=0" "$BASE/api/uploads"); check "FIT upload parsed" '[[ "$out" == *"\"status\":\"parsed\""* && "$out" == *"\"distance_m\":5000"* ]]'
-out=$(j "$BASE/api/day/2026-10-27"); check "activity attached to the run" '[[ "$out" == *"\"activities\":[{"* ]]'
+out=$(j "$BASE/api/day/2026-10-27"); check "activity attached to the run" '[[ "$out" == *"\"activities\":[{"* ]]'; check "day lists what was recorded on it" '[[ "$out" == *"\"recorded\":[{"* ]]'
 # FIT without workout id on a date with no workout -> auto-creates (date 2026-10-27 already has one, so it attaches)
 out=$(curl -s -b "$JAR" -F "file=@test/out/run.fit" -F "tz_offset_min=0" "$BASE/api/uploads"); check "FIT auto-match by date" '[[ "$out" == *"\"workout_id\":'"$WID"'"* ]]'
 # MFP

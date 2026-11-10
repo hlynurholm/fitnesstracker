@@ -57,6 +57,7 @@ private struct DayContent: View {
                 VStack(alignment: .leading, spacing: Theme.Space.m) {
                     if API.shared.offline { Banner("Offline: showing the last saved copy of this day. New entries are saved on the phone and synced later.") }
                     header(day)
+                    ForEach(model.data?.recorded ?? []) { RunCard(activity: $0) }
                     WeightCard(model: model)
                     session(day)
                     others

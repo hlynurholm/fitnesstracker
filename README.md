@@ -104,7 +104,7 @@ All routes need the session cookie or `Authorization: Bearer <API_TOKEN>`.
 | `GET /api/schedule?from=&to=` | Planned session per day in a range (max 120 days), with overrides and logged workouts |
 | `PUT /api/schedule/:date` | `{template_key}` sets what happens that day; `null` returns to the plan |
 | `POST /api/schedule/swap` | `{a, b}` swaps the sessions of two dates |
-| `GET /api/day/:date` | Everything for one day: schedule, plan, logged sets, last values per exercise, week strip |
+| `GET /api/day/:date` | Everything for one day: schedule, plan, logged sets, last values per exercise, week strip, activities recorded that day (`recorded`) |
 | `PUT /api/day/:date/workout` | Create or update the day's session (status, notes, run distance and time, checklist, plan) |
 | `PUT /api/sets/:client_id`, `DELETE` | Upsert or delete one set (client-generated id, so offline saves replay safely) |
 | `GET /api/workouts`, `GET/PATCH/DELETE /api/workouts/:id` | History |

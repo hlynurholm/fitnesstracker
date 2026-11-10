@@ -46,7 +46,8 @@ Live Activity push updates sent by the Worker.
 
 `Features/Runs/RunScreen.swift` is the page for one run: the route on a map coloured by pace, with a marker at every kilometre and the totals along its top, then pace, heart rate
 and elevation over distance, splits and heart rate zones. It opens from the Last run widget, the recent runs list in
-Progress and the activity on a day. Dragging along the strip under the map, or tapping the route, moves a point along
+Progress and the card at the top of the day it was recorded on (`RunCard`, from `recorded` in the day response, so a
+run shows on its day even when that day's session is a lift). Dragging along the strip under the map, or tapping the route, moves a point along
 it and the top of the map shows distance, time, pace, heart rate and height there. The play button on the strip runs the point along the
 route by the watch's clock at 200 times speed (`RouteMap.playbackSpeed`). The route comes from `lat`/`lon` in the activity's track; activities imported
 before the track kept positions get them filled in from the stored file the first time they are opened.

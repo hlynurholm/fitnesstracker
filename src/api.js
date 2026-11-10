@@ -411,7 +411,10 @@ async function getDay(env, date, settings) {
   }
   // Estimated days carry a projection instead of a session: where the numbers would be if things go to plan.
   const projection = day.horizon === "estimate" && !workouts.length ? projectDay(day, settings, await projectionHistory(env, day), todayLocal()) : null;
-  return { day, workouts, active, last, body, tests, week, projection, today: todayLocal() };
+  // Everything the watch recorded on this date, whichever session it is filed under, so a run shows on its day
+  // even when the day's own session is a lift.
+  const recorded = (await env.DB.prepare("SELECT id, upload_id, workout_id, start_time, date, sport, name, distance_m, duration_s, avg_hr, max_hr, avg_pace_s_per_km, best_5k_s, calories, elevation_gain_m FROM activities WHERE COALESCE(date, substr(start_time, 1, 10)) = ? ORDER BY start_time").bind(date).all()).results;
+  return { day, workouts, active, last, body, tests, week, projection, recorded, today: todayLocal() };
 }
 
 // The little history a projection needs: heaviest set per session for the day's lifts, the latest 5 km test, recent weigh-ins.

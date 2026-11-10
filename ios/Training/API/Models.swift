@@ -131,6 +131,8 @@ struct DayResponse: Decodable {
     var today: String
     /// Estimated days only: where the numbers would be if things go to plan.
     var projection: Projection? = nil
+    /// Everything the watch recorded on this date, whichever session it is filed under.
+    var recorded: [GarminActivity]? = nil
 }
 
 struct Projection: Decodable {

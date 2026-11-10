@@ -87,6 +87,42 @@ struct RouteSketch: View {
     }
 }
 
+/// A recorded activity as a card on its day: the headline numbers, the route as a sketch, and a tap through to the
+/// full page. Must sit inside a navigation stack.
+struct RunCard: View {
+    let activity: GarminActivity
+    @State private var route: RunRoute?
+
+    var body: some View {
+        let a = activity
+        NavigationLink { RunScreen(id: a.id) } label: {
+            HStack(alignment: .center, spacing: Theme.Space.m) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: Theme.Space.xs) {
+                        Image(systemName: a.isRun ? "figure.run" : "figure.mixed.cardio").font(.caption.weight(.semibold))
+                        Text(([a.isRun ? "Run" : (a.sport ?? "Activity").replacingOccurrences(of: "_", with: " ")] + [Fmt.timestamp(a.start_time).map { $0.formatted(date: .omitted, time: .shortened) }].compactMap { $0 })
+                            .joined(separator: " · ").uppercased()).font(Theme.Typography.label)
+                    }
+                    .foregroundStyle(Theme.Palette.run)
+                    Text(a.distance_m.map { String(format: "%.2f km", $0 / 1000) } ?? a.duration_s.map { Fmt.time($0) } ?? "Recorded").font(Theme.Typography.title)
+                    Text([a.distance_m != nil ? a.duration_s.map { Fmt.time($0) } : nil, a.avg_pace_s_per_km.map { Fmt.pace($0) }, a.avg_hr.map { "\(Int($0)) bpm" }].compactMap { $0 }.joined(separator: " · "))
+                        .font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+                }
+                Spacer(minLength: 0)
+                if let route, !route.isEmpty { RouteSketch(route: route, lineWidth: 3).frame(width: 96, height: 64) }
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.Palette.muted)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .card()
+        // The day only carries the summary; the route comes with the full activity (kept on the phone after the first time).
+        .task(id: a.id) {
+            if let full: GarminActivity = try? await API.shared.get("/api/activities/\(a.id)", cache: true) { route = RunRoute(full.track ?? []) }
+        }
+    }
+}
+
 /// One run: the route on a map coloured by pace, the headline numbers, pace, heart rate and elevation over the
 /// distance, the kilometre splits and the time in each heart rate zone.
 struct RunScreen: View {

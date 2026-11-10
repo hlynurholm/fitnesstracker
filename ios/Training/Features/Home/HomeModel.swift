@@ -70,7 +70,7 @@ struct ResolutionOption: Identifiable {
     var id: Int { days }
     static let all: [ResolutionOption] = [.init(days: 1, label: "Every day"), .init(days: 2, label: "2 day average"), .init(days: 3, label: "3 day average"),
                                           .init(days: 7, label: "Weekly average"), .init(days: 14, label: "2 week average"), .init(days: 30, label: "Monthly average")]
-    static func label(_ days: Int?) -> String { days.flatMap { d in all.first { $0.days == d }?.label.lowercased() } ?? "auto" }
+    static func label(_ days: Int) -> String { all.first { $0.days == days }?.label.lowercased() ?? "\(days) day average" }
 }
 
 /// A card that shows one daily metric from the watch: latest value, a short caption and a small chart.
@@ -119,7 +119,28 @@ struct CardSetting: Codable, Identifiable, Hashable {
     var resolution: Int? = nil
     /// "bars" or "line". nil is the widget's own default.
     var chart: String? = nil
-    var style: Spark.Style? { chart == "bars" ? .bars : chart == "line" ? .line : nil }
+
+    // What the widget shows until a choice is made. Every one of these is an entry in the widget's menu, so the
+    // menu can always tick the setting in use.
+
+    /// Days the chart covers.
+    func span(wide: Bool) -> Int {
+        if let range { return range }
+        switch kind {
+        case .bodyFat, .leanMass: return 90 // weighed now and then, so a longer stretch
+        case .weight: return wide ? 90 : 30
+        case .sleep: return 14
+        default: return wide ? 30 : 14
+        }
+    }
+
+    /// Days averaged into one point: every day while there is room, weekly beyond that.
+    func every(wide: Bool) -> Int { resolution ?? (span(wide: wide) > (wide ? 92 : 45) ? 7 : 1) }
+
+    var chartStyle: Spark.Style {
+        if let chart { return chart == "line" ? .line : .bars }
+        return kind == .weight ? .line : MetricSpec.all[kind]?.style ?? .bars
+    }
     var id: String { kind.rawValue }
 
     static let defaults: [CardSetting] = [
@@ -198,15 +219,11 @@ final class HomeModel {
         (0..<count).map { value(Day.add(today, -(count - 1 - $0))) }
     }
 
-    /// The most days a chart draws one by one when its resolution is left on auto: 45 on a half-width widget,
-    /// 3 months on a full-width one. Beyond that, auto shows weekly averages.
-    static func dailyLimit(wide: Bool) -> Int { wide ? 92 : 45 }
-
-    /// Values for a chart over `count` days. `every` is the widget's resolution: that many days are averaged into
-    /// each point (1 is every day), or nil for auto. Groups are counted back from today, so the newest one is whole.
-    func chart(_ count: Int, wide: Bool, every: Int? = nil, _ value: (String) -> Double?) -> [Double?] {
+    /// Values for a chart over `count` days, with `every` days averaged into each point (1 is every day).
+    /// Groups are counted back from today, so the newest one is whole.
+    func chart(_ count: Int, every: Int, _ value: (String) -> Double?) -> [Double?] {
         let daily = series(count, value)
-        let size = max(1, every ?? (count > Self.dailyLimit(wide: wide) ? 7 : 1))
+        let size = max(1, every)
         guard size > 1 else { return daily }
         var out: [Double?] = []
         var end = daily.count

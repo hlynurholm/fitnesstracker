@@ -194,9 +194,9 @@ export const PROGRAM = {
       finisher: { title: "Conditioning finisher", text: "8 rounds of 20 s all out and 40 s easy on a bike or rower. Swap in kettlebell swings if those are free.", minutes: 8 },
     },
     intervals_6x2: {
-      key: "intervals_6x2", name: "Intervals", kind: "run", subtitle: "6 × 2 min at 5:50/km, 2 min walk", duration: "30 to 45 min",
-      detail: "After a 10 min easy jog, run 6 × 2 min at 5:50/km with 2 min walk between. Heart rate around 165 to 180 by the end of each rep. Hard means talking is difficult but you can keep the pace steady across every rep. Every 2 weeks, 5 s/km faster if the last rep felt controlled.",
-      pace: "5:50/km",
+      key: "intervals_6x2", name: "Intervals", kind: "run", subtitle: "6 × 2 min at 5:30/km, 2 min walk", duration: "30 to 45 min",
+      detail: "After a 10 min easy jog, run 6 × 2 min at 5:30/km with 2 min walk between. Heart rate around 165 to 180 by the end of each rep. Hard means talking is difficult but you can keep the pace steady across every rep. Every 2 weeks, 5 s/km faster if the last rep felt controlled.",
+      pace: "5:30/km",
       intervals: { reps: 6, workSec: 120, restSec: 120 },
     },
     intervals_5x3: {

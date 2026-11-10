@@ -183,10 +183,14 @@ final class HomeModel {
         (0..<count).map { value(Day.add(today, -(count - 1 - $0))) }
     }
 
-    /// Values for a chart over `count` days: one per day, or weekly averages once there are too many days to draw each.
-    func chart(_ count: Int, _ value: (String) -> Double?) -> [Double?] {
+    /// The most days a chart draws one by one: 45 on a half-width widget, 3 months on a full-width one.
+    /// Beyond that there is no room, and the chart shows weekly averages.
+    static func dailyLimit(wide: Bool) -> Int { wide ? 92 : 45 }
+
+    /// Values for a chart over `count` days: one per day while they fit, weekly averages after that.
+    func chart(_ count: Int, wide: Bool, _ value: (String) -> Double?) -> [Double?] {
         let daily = series(count, value)
-        guard count > 45 else { return daily }
+        guard count > Self.dailyLimit(wide: wide) else { return daily }
         return stride(from: 0, to: daily.count, by: 7).map { i in
             let week = daily[i..<min(i + 7, daily.count)].compactMap { $0 }
             return week.isEmpty ? nil : week.reduce(0, +) / Double(week.count)

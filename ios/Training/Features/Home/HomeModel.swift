@@ -119,14 +119,11 @@ final class HomeModel {
     }
 
     func load() async {
-        do {
-            async let metrics: MetricsResponse = API.shared.get("/api/metrics?days=120", cache: true)
-            async let dashboard: Dashboard = API.shared.get("/api/dashboard", cache: true)
-            let (m, d) = try await (metrics, dashboard)
-            days = Dictionary(m.days.map { ($0.date, $0.data) }, uniquingKeysWith: { _, b in b })
-            dash = d
-            error = nil
-        } catch { self.error = error.localizedDescription }
+        // The two are independent: training cards still load if the watch data cannot (an older server has no /api/metrics).
+        async let metrics: MetricsResponse = API.shared.get("/api/metrics?days=120", cache: true)
+        async let dashboard: Dashboard = API.shared.get("/api/dashboard", cache: true)
+        if let m = try? await metrics { days = Dictionary(m.days.map { ($0.date, $0.data) }, uniquingKeysWith: { _, b in b }) }
+        do { dash = try await dashboard; error = nil } catch { self.error = error.localizedDescription }
         loaded = true
     }
 

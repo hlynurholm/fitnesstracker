@@ -23,9 +23,13 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Every 30 minutes: pull new Garmin activities (src/garmin.js). A no-op until the GARMIN_API_KEY secret is set.
+  "triggers": { "crons": ["*/30 * * * *"] },
   "vars": {
-    // Non-secret config. Secrets (APP_PASSWORD, API_TOKEN) are set with `wrangler secret put`.
+    // Non-secret config. Secrets (APP_PASSWORD, API_TOKEN, GARMIN_API_KEY) are set with `wrangler secret put`.
     "APP_NAME": "Fitness tracker",
-    "SESSION_DAYS": "180"
+    "SESSION_DAYS": "180",
+    // Garmin activity type to import automatically. Empty string imports every type.
+    "GARMIN_ACTIVITY_TYPE": "running"
   }
 }

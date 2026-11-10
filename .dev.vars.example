@@ -1,3 +1,5 @@
 # Local development secrets. Not committed.
 APP_PASSWORD=changeme
 API_TOKEN=dev-token-change-me
+# Optional: Garmin Connect Personal API key for the automatic activity import (README, "Automatic Garmin import").
+# GARMIN_API_KEY=

@@ -288,6 +288,23 @@ struct UploadResponse: Decodable {
     let uploads: [Result]
 }
 
+/// GET /api/garmin: whether the Worker's automatic Garmin import is set up, and how its last run went.
+struct GarminStatus: Decodable {
+    struct Run: Decodable { let at: String?; let ok: Bool?; let found: Int?; let imported: Int?; let already: Int?; let error: String? }
+    let configured: Bool
+    let last: Run?
+}
+
+/// POST /api/garmin/sync
+struct GarminSyncResult: Decodable {
+    struct Item: Decodable { let id: String?; let name: String?; let date: String? }
+    let ok: Bool
+    let found: Int
+    let imported: [Item]
+    let already: Int
+    let error: String?
+}
+
 struct Report: Decodable, Identifiable, Hashable {
     let id: Int
     let title: String
@@ -319,6 +336,8 @@ struct NutritionDay: Decodable, Identifiable, Hashable {
     let fat_g: Double?
     let sugar_g: Double?
     let meals: [Meal]?
+    /// myfitnesspal for a CSV import, manual for totals sent by the app (Apple Health sync).
+    var source: String? = nil
     var id: String { date }
 }
 

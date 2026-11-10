@@ -1,6 +1,8 @@
 // Cloudflare Worker entry: auth gate, API routes, static assets.
 import { isAuthed, loginHandler, logoutHandler, isConfigured } from "./auth.js";
-import { handleApi } from "./api.js";
+import { handleApi, ingestFile } from "./api.js";
+import { getSettings } from "./db.js";
+import { syncGarmin, garminConfigured } from "./garmin.js";
 
 const PUBLIC_PREFIXES = ["/css/", "/icons/", "/vendor/"];
 const PUBLIC_FILES = new Set(["/manifest.webmanifest", "/favicon.ico", "/favicon.svg", "/login.html", "/sw.js", "/js/login.js"]);
@@ -21,6 +23,15 @@ npx wrangler secret put API_TOKEN</pre>
 }
 
 export default {
+  // Cron trigger (wrangler.jsonc): pull new Garmin activities. Does nothing until GARMIN_API_KEY is set.
+  async scheduled(event, env, ctx) {
+    if (!garminConfigured(env)) return;
+    ctx.waitUntil((async () => {
+      const result = await syncGarmin(env, await getSettings(env), ingestFile);
+      if (result.error) console.error("Garmin sync:", result.error);
+    })());
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;

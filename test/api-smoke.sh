@@ -95,6 +95,9 @@ out=$(j -X PUT -d '{"max_hr":"188"}' "$BASE/api/settings"); check "settings save
 out=$(j -X PUT -d '{"bogus":"1"}' "$BASE/api/settings"); check "unknown setting rejected" '[[ "$out" == *"Unknown setting"* ]]'
 # delete set
 out=$(j -X DELETE "$BASE/api/sets/testset0004"); check "set deleted" '[[ "$out" == *"ok"* ]]'
+# garmin sync: off until the GARMIN_API_KEY secret is set (the full path is covered by test/garmin-sync.sh)
+out=$(j "$BASE/api/garmin"); check "garmin status: not configured" '[[ "$out" == *"\"configured\":false"* ]]'
+out=$(j -X POST -d '{}' "$BASE/api/garmin/sync"); check "garmin sync without a key does nothing" '[[ "$out" == *"GARMIN_API_KEY is not set"* && "$out" == *"\"imported\":[]"* ]]'
 # logout
 j -X POST "$BASE/api/logout" >/dev/null; code=$(curl -s -o /dev/null -w "%{http_code}" -b "$JAR" "$BASE/api/settings"); check "logout clears session (401)" '[ "$code" = "401" ]'
 echo; echo "passed: $pass, failed: $fail"

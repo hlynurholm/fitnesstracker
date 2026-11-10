@@ -42,6 +42,15 @@ To keep cues and the lock screen on time while the phone is locked, the interval
 (background mode `audio`). That is fine for a personal build and would not pass App Store review. The replacement is
 Live Activity push updates sent by the Worker.
 
+## Automatic data
+
+- Apple Health (Data tab, "Connect Apple Health"): reads daily nutrition totals and the first weigh-in of each day from
+  Health and sends them through `PUT /api/nutrition` and `PUT /api/body` whenever the app comes to the front.
+  MyFitnessPal writes both to Health once HealthKit Sharing is on in its settings. A day imported from a MyFitnessPal
+  CSV keeps its meal breakdown, and a weight typed in by hand is never replaced. The rules are in `HealthSync.plan`.
+- Garmin: done by the Worker (root README, "Automatic Garmin import"). The Data tab shows its last run and has a
+  "Check Garmin now" button.
+
 ## Local development against `wrangler dev`
 
 Debug builds read two launch environment variables, so the simulator can use a local Worker with the example

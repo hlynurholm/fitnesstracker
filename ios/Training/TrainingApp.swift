@@ -5,6 +5,9 @@ struct TrainingApp: App {
     init() {
         Theme.Typography.applyToNavigationBars()
         LiveWorkout.endLeftovers()
+        #if DEBUG
+        HealthSync.selfCheck()
+        #endif
     }
 
     var body: some Scene {
@@ -37,7 +40,10 @@ private struct RootView: View {
             }
         }
         .task(id: api.hasToken) { if api.hasToken { await app.load() } }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await api.flush() } } }
+        // Coming to the front: replay queued writes, then pick up anything new from Apple Health.
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .active { Task { await api.flush(); await HealthSync.shared.sync() } }
+        }
     }
 
     private var connect: some View {

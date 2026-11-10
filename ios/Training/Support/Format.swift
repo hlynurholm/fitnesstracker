@@ -23,6 +23,11 @@ enum Day {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: Date())
         return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
     }
+    /// The calendar day a moment falls on where the phone is, for timestamps from Apple Health.
+    static func local(_ moment: Date) -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: moment)
+        return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
+    }
     static func date(_ day: String) -> Date { iso.date(from: String(day.prefix(10))) ?? Date() }
     static func string(_ date: Date) -> String { iso.string(from: date) }
     static func add(_ day: String, _ days: Int) -> String { string(utc.date(byAdding: .day, value: days, to: date(day))!) }

@@ -1,8 +1,9 @@
 // JSON API. All routes here require auth (checked in index.js).
 import { PROGRAM, resolveDay, templateFor, buildPlan, mondayOf, addDays, daysBetween, todayLocal, weekNumber, phaseForWeek, scheduledTemplateKey } from "../public/js/program.js";
-import { getSettings, setSettings, getOverrides, ensureWorkout, rowWithJson, WORKOUT_FIELDS, num, gzip, gunzip, blobToBytes, toArrayBuffer, b64encode } from "./db.js";
+import { getSettings, setSettings, getOverrides, ensureWorkout, rowWithJson, parseJsonField, WORKOUT_FIELDS, num, gzip, gunzip, blobToBytes, toArrayBuffer, b64encode } from "./db.js";
 import { parseUpload } from "./parsers/index.js";
 import { buildSummaryMarkdown } from "./summary.js";
+import { syncGarmin, garminConfigured } from "./garmin.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{6,80}$/;
@@ -262,6 +263,15 @@ async function route(method, p, request, env, url, settings) {
     return new Response(md, { headers: { "Content-Type": "text/markdown; charset=utf-8", "Cache-Control": "no-store" } });
   }
   if (a === "whoami" && method === "GET") return { ok: true };
+
+  // Automatic Garmin import (src/garmin.js). GET shows whether it is set up and how the last run went.
+  if (a === "garmin") {
+    if (!b && method === "GET") return { configured: garminConfigured(env), last: parseJsonField(settings.garmin_last_sync) };
+    if (b === "sync" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      return syncGarmin(env, settings, ingestFile, { days: body && body.days });
+    }
+  }
 
   throw new HttpError(404, `No route for ${method} /api/${p.join("/")}`);
 }
@@ -524,41 +534,47 @@ async function handleUpload(request, env, settings) {
   const dateHint = form.get("date") ? assertDate(form.get("date")) : null;
   const sourceHint = form.get("source") || null;
   const tz = num(form.get("tz_offset_min"));
-  const maxHr = num(settings.max_hr) || PROGRAM.heartRate.maxBpm;
   const results = [];
   for (const f of files) {
     const bytes = new Uint8Array(await f.arrayBuffer());
     if (bytes.length > 25_000_000) { results.push({ filename: f.name, error: "File over 25 MB" }); continue; }
-    const parsed = parseUpload({ filename: f.name, contentType: f.type, bytes, sourceHint, maxHr });
-    const gz = await gzip(bytes);
-    const storeRaw = gz.length <= MAX_RAW_GZ;
-    const parsedJson = parsed.parsed ? JSON.stringify(parsed.parsed) : null;
-    const res = await env.DB.prepare(
-      `INSERT INTO uploads (workout_id, source, format, filename, content_type, size_bytes, raw, raw_encoding, parsed_json, parse_status, parse_error)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(workoutId, parsed.source, parsed.format, f.name, f.type || null, bytes.length, storeRaw ? toArrayBuffer(gz) : null, storeRaw ? "gzip" : null,
-      parsedJson && parsedJson.length < 1_500_000 ? parsedJson : null, parsed.status, parsed.error || (storeRaw ? null : "Raw file too large to store (over 1.8 MB compressed); parsed data kept")).run();
-    const uploadId = res.meta.last_row_id;
-    const out = { upload_id: uploadId, filename: f.name, format: parsed.format, source: parsed.source, status: parsed.status, error: parsed.error, activities: [], nutrition_days: 0, body_metrics: 0 };
-
-    const single = parsed.activities.length === 1;
-    for (const act of parsed.activities) {
-      const date = localDateFromActivity(act, tz, dateHint);
-      let wid = workoutId;
-      if (!wid) wid = await matchOrCreateWorkout(env, date, act, settings, single);
-      const id = await insertActivity(env, uploadId, wid, act, date);
-      if (wid) await fillWorkoutFromActivities(env, wid);
-      out.activities.push({ id, workout_id: wid, date, distance_m: act.distance_m, duration_s: act.duration_s, avg_hr: act.avg_hr, avg_pace_s_per_km: act.avg_pace_s_per_km, best_5k_s: act.best_5k_s, sport: act.sport });
-    }
-    if (workoutId && !parsed.activities.length) await env.DB.prepare("UPDATE uploads SET workout_id = ? WHERE id = ?").bind(workoutId, uploadId).run();
-    for (const d of parsed.nutrition_days) { await upsertNutritionDay(env, d, uploadId); out.nutrition_days++; }
-    for (const m of parsed.body_metrics) {
-      await env.DB.prepare(`INSERT INTO body_metrics (date, weight_kg, source) VALUES (?, ?, 'myfitnesspal') ON CONFLICT(date, source) DO UPDATE SET weight_kg = excluded.weight_kg, updated_at = datetime('now')`).bind(m.date, m.weight_kg).run();
-      out.body_metrics++;
-    }
-    results.push(out);
+    results.push(await ingestFile(env, settings, { filename: f.name, contentType: f.type, bytes, workoutId, dateHint, sourceHint, tz }));
   }
   return { uploads: results };
+}
+
+// Stores one file and everything parsed from it: the upload row, activities matched to a workout, nutrition days and
+// weigh-ins. Used by the upload endpoint and by the Garmin sync. tz is minutes behind UTC, as the browser reports it.
+export async function ingestFile(env, settings, { filename, contentType, bytes, workoutId = null, dateHint = null, sourceHint = null, tz = null }) {
+  const maxHr = num(settings.max_hr) || PROGRAM.heartRate.maxBpm;
+  const parsed = parseUpload({ filename, contentType, bytes, sourceHint, maxHr });
+  const gz = await gzip(bytes);
+  const storeRaw = gz.length <= MAX_RAW_GZ;
+  const parsedJson = parsed.parsed ? JSON.stringify(parsed.parsed) : null;
+  const res = await env.DB.prepare(
+    `INSERT INTO uploads (workout_id, source, format, filename, content_type, size_bytes, raw, raw_encoding, parsed_json, parse_status, parse_error)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(workoutId, parsed.source, parsed.format, filename, contentType || null, bytes.length, storeRaw ? toArrayBuffer(gz) : null, storeRaw ? "gzip" : null,
+    parsedJson && parsedJson.length < 1_500_000 ? parsedJson : null, parsed.status, parsed.error || (storeRaw ? null : "Raw file too large to store (over 1.8 MB compressed); parsed data kept")).run();
+  const uploadId = res.meta.last_row_id;
+  const out = { upload_id: uploadId, filename, format: parsed.format, source: parsed.source, status: parsed.status, error: parsed.error, activities: [], nutrition_days: 0, body_metrics: 0 };
+
+  const single = parsed.activities.length === 1;
+  for (const act of parsed.activities) {
+    const date = localDateFromActivity(act, tz, dateHint);
+    let wid = workoutId;
+    if (!wid) wid = await matchOrCreateWorkout(env, date, act, settings, single);
+    const id = await insertActivity(env, uploadId, wid, act, date);
+    if (wid) await fillWorkoutFromActivities(env, wid);
+    out.activities.push({ id, workout_id: wid, date, distance_m: act.distance_m, duration_s: act.duration_s, avg_hr: act.avg_hr, avg_pace_s_per_km: act.avg_pace_s_per_km, best_5k_s: act.best_5k_s, sport: act.sport });
+  }
+  if (workoutId && !parsed.activities.length) await env.DB.prepare("UPDATE uploads SET workout_id = ? WHERE id = ?").bind(workoutId, uploadId).run();
+  for (const d of parsed.nutrition_days) { await upsertNutritionDay(env, d, uploadId); out.nutrition_days++; }
+  for (const m of parsed.body_metrics) {
+    await env.DB.prepare(`INSERT INTO body_metrics (date, weight_kg, source) VALUES (?, ?, 'myfitnesspal') ON CONFLICT(date, source) DO UPDATE SET weight_kg = excluded.weight_kg, updated_at = datetime('now')`).bind(m.date, m.weight_kg).run();
+    out.body_metrics++;
+  }
+  return out;
 }
 
 // ---------- dashboard / export ----------

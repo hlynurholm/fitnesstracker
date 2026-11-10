@@ -64,6 +64,18 @@ Alternatively, connect the repo in the Cloudflare dashboard under Workers and Pa
 
 Workers and Pages, fitness-tracker, Settings, Domains and Routes, Add. Any domain already on Cloudflare works.
 
+## Automatic Garmin import (optional)
+
+The Worker can pull new runs from Garmin Connect by itself, using Garmin's Personal API (your own data, your own key).
+
+1. Log in to Garmin Connect on the web, open the [Personal API Key page](https://connect.garmin.com/app/settings/personalApiToken), create a key and copy it. Garmin shows it once. Keys expire after 30 days to one year, your choice, and Garmin emails a reminder a week before.
+2. Store it as a Worker secret: `npx wrangler secret put GARMIN_API_KEY`
+3. Deploy. Every 30 minutes the Worker lists your recent running activities, downloads the original file of each one it has not seen, and runs it through the same parser as a manual upload. `POST /api/garmin/sync` does the same on demand (`{"days": 60}` looks further back, default 14) and `GET /api/garmin` shows how the last run went. The iOS app has a button for it on the Data tab.
+
+Without the secret nothing happens. A file you already uploaded by hand under Garmin's own name (`<activity id>_ACTIVITY.fit`) is not imported twice. `GARMIN_ACTIVITY_TYPE` in `wrangler.jsonc` picks the activity type (`running`; empty for everything).
+
+The code follows Garmin's published reference but has only been run against the stand-in server in `test/garmin-stub.mjs`, not yet against Garmin itself. `bash test/garmin-sync.sh` (see its header) runs that check.
+
 ## Changing the plan
 
 The whole program lives in `public/js/program.js`: weekly schedule, phases, warm-up, jump drills per phase, the three lifting days with sets and reps, interval structure by week, deload and test weeks, targets. Edit and deploy. Logged sets are keyed by exercise key, so renaming an exercise keeps its history. The start date, jump phase, goal weight, calorie and protein targets, max heart rate and 5 km target can be changed in Settings inside the app without a deploy.
@@ -105,6 +117,7 @@ All routes need the session cookie or `Authorization: Bearer <API_TOKEN>`.
 | `GET /api/summary.md` | Markdown summary for Claude |
 | `GET/POST /api/reports`, `GET/DELETE /api/reports/:id` | Reports shown in the app |
 | `GET/PUT /api/settings` | Start date, phase override, targets |
+| `GET /api/garmin`, `POST /api/garmin/sync` | Automatic Garmin import: status of the last run, and run it now |
 
 ## Project layout
 

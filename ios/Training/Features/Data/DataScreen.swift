@@ -11,6 +11,7 @@ struct DataScreen: View {
     @State private var busy = false
     @State private var exportFile: URL?
     @State private var deleteUpload: Upload?
+    @State private var garmin: GarminStatus?
 
     var body: some View {
         Screen {
@@ -18,9 +19,36 @@ struct DataScreen: View {
 
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 CardTitle("Garmin", note: "FIT, TCX, GPX or CSV")
+                if let garmin, garmin.configured {
+                    // The Worker pulls new runs from Garmin on a schedule. This shows its last run and can trigger one.
+                    Label("Automatic import is on", systemImage: "arrow.triangle.2.circlepath").font(Theme.Typography.callout).foregroundStyle(Theme.Palette.ok)
+                    if let last = garmin.last {
+                        Text(garminSummary(last)).font(Theme.Typography.caption).foregroundStyle(last.ok == false ? Theme.Palette.danger : Theme.Palette.muted)
+                    }
+                    Button("Check Garmin now") { Task { await syncGarmin() } }.buttonStyle(.tinted)
+                } else if garmin != nil {
+                    Text("Automatic import is off: the server has no Garmin API key yet. Until then, upload files here.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+                }
                 Text("Runs are matched to the session on the same day. Attach a file to a specific run from its day instead if you prefer.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
                 Button("Upload Garmin files") { importSource = "garmin" }.buttonStyle(.tinted)
             }.card()
+
+            if HealthSync.available {
+                let health = HealthSync.shared
+                VStack(alignment: .leading, spacing: Theme.Space.s) {
+                    CardTitle("Apple Health", note: "nutrition and weight")
+                    if health.enabled {
+                        Label("Connected", systemImage: "heart.fill").font(Theme.Typography.callout).foregroundStyle(Theme.Palette.ok)
+                        if let status = health.status { Text(status).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
+                        Button(health.running ? "Syncing" : "Sync now") { Task { await health.sync() } }.buttonStyle(.tinted).disabled(health.running)
+                        Button("Disconnect") { health.disconnect() }.font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted)
+                    } else {
+                        Text("MyFitnessPal saves your food and weight to Apple Health. Connect, and daily totals are sent to the tracker whenever you open the app. Turn on HealthKit Sharing in MyFitnessPal first.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+                        if let status = health.status { Text(status).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.danger) }
+                        Button("Connect Apple Health") { Task { await health.connect() } }.buttonStyle(.tinted)
+                    }
+                }.card()
+            }
 
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 CardTitle("MyFitnessPal", note: "CSV export")
@@ -86,6 +114,24 @@ struct DataScreen: View {
             reports = try await API.shared.get("/api/reports")
             error = nil
         } catch { self.error = error.localizedDescription }
+        // Absent on a server that does not have the Garmin import yet: then the card just shows the manual upload.
+        garmin = try? await API.shared.get("/api/garmin")
+    }
+
+    private func garminSummary(_ last: GarminStatus.Run) -> String {
+        let when = Fmt.timestamp(last.at).map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "unknown time"
+        if let error = last.error { return "Last check \(when): \(last.imported ?? 0) new. Problem: \(error)" }
+        return "Last check \(when): \(last.imported ?? 0) new, \(last.already ?? 0) already here."
+    }
+
+    private func syncGarmin() async {
+        busy = true
+        defer { busy = false }
+        do {
+            let r: GarminSyncResult = try await API.shared.send("POST", "/api/garmin/sync")
+            toast = r.error ?? (r.imported.isEmpty ? "Nothing new on Garmin" : "Imported \(r.imported.count) from Garmin")
+            await load()
+        } catch { toast = error.localizedDescription }
     }
 
     private func upload(_ urls: [URL], source: String) async {

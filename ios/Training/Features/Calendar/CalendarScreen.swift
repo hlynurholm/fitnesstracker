@@ -45,15 +45,25 @@ struct CalendarScreen: View {
             HStack(spacing: Theme.Space.m) {
                 legend("Lift", Theme.Palette.lift); legend("Run", Theme.Palette.run); legend("Done", Theme.Palette.ok)
                 Label("Moved", systemImage: "arrow.left.arrow.right").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+                Text("Estimate").font(Theme.Typography.caption.italic()).foregroundStyle(Theme.Palette.muted)
             }
         }
         .card()
-        if let days = schedule?.days.filter({ $0.date.hasPrefix(month.prefix(7)) && $0.kind != "rest" }) {
+        if let all = schedule?.days.filter({ $0.date.hasPrefix(month.prefix(7)) }) {
+            let days = all.filter { $0.kind != "rest" && $0.outlook != .none }
             let done = days.filter { $0.main?.status == "done" }.count
+            let estimated = all.contains { $0.outlook == .estimate }
+            let window = "The plan is fixed through \(Day.label(schedule?.concreteTo ?? "", year: true)) and estimated through \(Day.label(schedule?.estimateTo ?? "", year: true)). It moves forward on the 1st of each month."
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                CardTitle(title: "This month") { Badge("\(done) of \(days.count) done", tone: done > 0 ? .ok : .neutral) }
-                Text("\(days.filter { $0.kind == "lift" }.count) lifting days and \(days.filter { $0.kind == "run" }.count) runs planned. Extras like padel are not counted.")
-                    .font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+                if days.isEmpty {
+                    CardTitle("Not planned yet")
+                    Text(window).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+                } else {
+                    CardTitle(title: "This month") { Badge(estimated ? "estimate" : "\(done) of \(days.count) done", tone: done > 0 ? .ok : .neutral) }
+                    Text("\(days.filter { $0.kind == "lift" }.count) lifting days and \(days.filter { $0.kind == "run" }.count) runs \(estimated ? "if the plan holds" : "planned"). Extras like padel are not counted.")
+                        .font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+                    if estimated { Text(window).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
+                }
             }
             .card()
         }
@@ -61,19 +71,22 @@ struct CalendarScreen: View {
 
     private func cell(_ d: ScheduleDay) -> some View {
         let status = d.main?.status
-        let color = status == "done" ? Theme.Palette.ok : Theme.Palette.kind(d.kind)
+        let outlook = d.outlook
+        let color = status == "done" ? Theme.Palette.ok : outlook == .estimate ? Theme.Palette.muted : Theme.Palette.kind(d.kind)
         let isToday = d.date == Day.today()
         return VStack(spacing: 2) {
             Text(Day.dayNumber(d.date)).font(Theme.Typography.callout.weight(isToday ? .bold : .regular)).foregroundStyle(isToday ? Theme.Palette.accent : Theme.Palette.text)
-            Text(shortNames[d.templateKey] ?? d.name).font(Theme.Typography.label).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.7)
+            // Estimated days are muted and italic; days beyond the horizon show only the date.
+            Text(shortNames[d.templateKey] ?? d.name).font(outlook == .estimate ? Theme.Typography.label.italic() : Theme.Typography.label)
+                .foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.7).opacity(outlook == .none ? 0 : 1)
             Image(systemName: status == "done" ? "checkmark" : d.moved ? "arrow.left.arrow.right" : "circle.fill")
                 .font(.system(size: 7, weight: .bold)).foregroundStyle(d.moved && status != "done" ? Theme.Palette.accent : color).opacity(status == nil && !d.moved ? 0 : 1)
         }
         .frame(maxWidth: .infinity).padding(.vertical, Theme.Space.s)
-        .background(isToday ? Theme.Palette.accent.opacity(0.12) : Theme.Palette.fill.opacity(0.5), in: RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))
+        .background(isToday ? Theme.Palette.accent.opacity(0.12) : Theme.Palette.fill.opacity(outlook == .concrete ? 0.5 : 0.2), in: RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))
         .opacity(d.date.hasPrefix(month.prefix(7)) ? (status == "skipped" ? 0.5 : 1) : 0.35)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(Day.label(d.date)), \(d.name)\(status.map { ", \($0.replacingOccurrences(of: "_", with: " "))" } ?? "")")
+        .accessibilityLabel("\(Day.label(d.date)), " + (outlook == .none ? "not planned yet" : (outlook == .estimate ? "estimate, " : "") + d.name) + (status.map { ", \($0.replacingOccurrences(of: "_", with: " "))" } ?? ""))
     }
 
     private func legend(_ text: String, _ color: Color) -> some View {

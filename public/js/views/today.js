@@ -214,6 +214,8 @@ class DayView {
     if (day.deload) c.appendChild(h("div", { class: "banner" }, "Deload: every 6th week all sets are cut in half. Keep the weight, do half the sets."));
 
     c.appendChild(this.weekStrip());
+    // Beyond the concrete planning window there is no session to show yet, only an outlook.
+    if (day.horizon && day.horizon !== "concrete" && !day.moved && !this.data.workouts.length) { c.appendChild(this.outlookCard()); return; }
     c.appendChild(this.bodyWeightCard());
     for (const card of this.sessionCards()) c.appendChild(card);
 
@@ -228,11 +230,25 @@ class DayView {
     this.startTimer();
   }
 
+  outlookCard() {
+    const day = this.day, t = day.template;
+    const estimate = day.horizon === "estimate";
+    return h("div", { class: "card" },
+      h("div", { class: "kind-label kind-rest" }, estimate ? "Estimate" : "Not planned yet"),
+      h("h2", { style: { margin: 0 } }, estimate ? t.name : "Nothing planned this far ahead"),
+      h("p", { class: "muted", style: { margin: ".5rem 0 0" } }, estimate
+        ? `If the plan holds, this is ${t.kind === "rest" ? "a rest day" : `a ${t.kind === "lift" ? "lifting" : "running"} day`}. Sets, paces and targets are set closer to the time, from how training has gone by then.`
+        : "Sessions this far out would only be the weekly template repeated, so the calendar leaves them empty."),
+      h("p", { class: "muted small", style: { margin: ".5rem 0 0" } }, `The plan is fixed through ${fmtDay(day.concreteTo, true)} and estimated through ${fmtDay(day.estimateTo, true)}. It moves forward on the 1st of each month.`));
+  }
+
   weekStrip() {
     const strip = h("div", { class: "week-strip" });
     this.data.week.forEach((d, i) => {
       const w = d.workouts.find((x) => x.template_key === d.templateKey) || d.workouts.find((x) => x.status !== "skipped") || d.workouts[0];
-      const cls = ["week-day", d.kind, w ? w.status : "", d.date === this.today ? "today" : "", d.date === this.date ? "selected" : "", d.moved ? "moved" : ""].join(" ");
+      // Past the concrete plan the dot is grey (estimate) or absent (not planned), unless something is logged or moved.
+      const outlook = w || d.moved || !d.horizon || d.horizon === "concrete" ? "" : d.horizon;
+      const cls = ["week-day", outlook ? "rest" : d.kind, outlook === "none" ? "unplanned" : "", w ? w.status : "", d.date === this.today ? "today" : "", d.date === this.date ? "selected" : "", d.moved ? "moved" : ""].join(" ");
       strip.appendChild(h("a", { class: cls, href: `/day/${d.date}`, title: d.name, "aria-current": d.date === this.date ? "date" : null },
         WEEKDAYS[i].slice(0, 3),
         h("b", null, String(Number(d.date.slice(8)))),

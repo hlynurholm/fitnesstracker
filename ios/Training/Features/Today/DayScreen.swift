@@ -49,6 +49,10 @@ private struct DayContent: View {
             if let day = model.day {
                 // The week strip keeps its identity across days, so it never redraws from scratch.
                 WeekStrip(week: model.data?.week ?? [], selected: selected, go: go)
+                // Beyond the concrete planning window there is no session yet, only an outlook.
+                if Outlook(day.horizon) != .concrete, !day.moved, (model.data?.workouts ?? []).isEmpty {
+                    OutlookCard(day: day).id(model.date)
+                } else {
                 VStack(alignment: .leading, spacing: Theme.Space.m) {
                     if API.shared.offline { Banner("Offline: showing the last saved copy of this day. New entries are saved on the phone and synced later.") }
                     header(day)
@@ -59,6 +63,7 @@ private struct DayContent: View {
                     if model.template.kind != "lift" { ChecklistCard(model: model, block: "knee", title: model.program.kneeRoutine.title, note: (model.program.kneeRoutine.note ?? "") + (model.template.kind == "run" ? " Optional after the run." : ""), items: model.program.kneeRoutine.items.map { .init(id: $0.id, text: $0.text) }) }
                 }
                 .id(model.date) // per-day field state (typed weight, open notes) starts fresh for each day
+                }
             } else if let error = model.error {
                 ErrorCard(message: error) { await model.load() }
             }
@@ -207,6 +212,28 @@ private struct DayContent: View {
 
 // MARK: Pieces
 
+/// A day past the concrete plan: the likely session type for an estimate, or nothing at all further out.
+private struct OutlookCard: View {
+    let day: DayInfo
+    var body: some View {
+        let estimate = Outlook(day.horizon) == .estimate
+        let kind = day.template.kind
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            Text(estimate ? "ESTIMATE" : "NOT PLANNED YET").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+            Text(estimate ? day.template.name : "Nothing planned this far ahead").font(Theme.Typography.title)
+            Text(estimate
+                 ? "If the plan holds, this is \(kind == "rest" ? "a rest day" : kind == "lift" ? "a lifting day" : "a running day"). Sets, paces and targets are set closer to the time, from how training has gone by then."
+                 : "Sessions this far out would only be the weekly template repeated, so the calendar leaves them empty.")
+                .font(Theme.Typography.callout)
+            if let fixed = day.concreteTo, let estimated = day.estimateTo {
+                Text("The plan is fixed through \(Day.label(fixed, year: true)) and estimated through \(Day.label(estimated, year: true)). It moves forward on the 1st of each month.")
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+            }
+        }
+        .card()
+    }
+}
+
 private struct WeekStrip: View {
     let week: [WeekDay]
     let selected: String
@@ -219,7 +246,10 @@ private struct WeekStrip: View {
                     VStack(spacing: 3) {
                         Text(Day.label(d.date).prefix(3)).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
                         Text(Day.dayNumber(d.date)).font(Theme.Typography.headline).foregroundStyle(d.date == Day.today() ? Theme.Palette.accent : Theme.Palette.text)
-                        Circle().fill(w?.status == "done" ? Theme.Palette.ok : Theme.Palette.kind(d.kind).opacity(w?.status == "skipped" ? 0.25 : 0.8)).frame(width: 7, height: 7)
+                        // Past the concrete plan the dot is grey (estimate) or absent, unless something is logged or moved.
+                        let outlook = w != nil || d.moved ? Outlook.concrete : Outlook(d.horizon)
+                        Circle().fill(w?.status == "done" ? Theme.Palette.ok : (outlook == .concrete ? Theme.Palette.kind(d.kind) : Theme.Palette.rest).opacity(w?.status == "skipped" ? 0.25 : 0.8))
+                            .frame(width: 7, height: 7).opacity(outlook == .none ? 0 : 1)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, Theme.Space.s)
                     .background(d.date == selected ? Theme.Palette.fill : .clear, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))

@@ -349,7 +349,7 @@ async function getDay(env, date, settings) {
   for (let i = 0; i < 7; i++) {
     const d = addDays(monday, i);
     const r = resolveDay(d, settings);
-    week.push({ date: d, templateKey: r.templateKey, kind: r.template.kind, name: r.template.name, moved: r.moved, workouts: weekRows.filter((w) => w.date === d) });
+    week.push({ date: d, templateKey: r.templateKey, kind: r.template.kind, name: r.template.name, moved: r.moved, horizon: r.horizon, workouts: weekRows.filter((w) => w.date === d) });
   }
   return { day, workouts, active, last, body, tests, week, today: todayLocal() };
 }
@@ -375,9 +375,10 @@ async function getSchedule(env, settings, from, to) {
   const days = [];
   for (let d = from; d <= to; d = addDays(d, 1)) {
     const r = resolveDay(d, settings);
-    days.push({ date: d, week: r.week, templateKey: r.templateKey, defaultTemplateKey: r.defaultTemplateKey, moved: r.moved, kind: r.template.kind, name: r.template.name, subtitle: r.template.subtitle, deload: r.deload, testWeek: r.testWeek, workouts: rows.filter((w) => w.date === d) });
+    days.push({ date: d, week: r.week, templateKey: r.templateKey, defaultTemplateKey: r.defaultTemplateKey, moved: r.moved, kind: r.template.kind, name: r.template.name, subtitle: r.template.subtitle, deload: r.deload, testWeek: r.testWeek, horizon: r.horizon, workouts: rows.filter((w) => w.date === d) });
   }
-  return { from, to, today: todayLocal(), days };
+  const last = days[days.length - 1] ? resolveDay(to, settings) : {};
+  return { from, to, today: todayLocal(), concreteTo: last.concreteTo, estimateTo: last.estimateTo, days };
 }
 
 async function upsertDayWorkout(env, date, body, settings) {

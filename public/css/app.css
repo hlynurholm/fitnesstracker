@@ -195,6 +195,10 @@ input[type=file]::file-selector-button { font: inherit; font-weight: 600; font-s
 .cal-weekdays { margin-bottom: .3rem; font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); text-align: center; }
 .cal-cell { position: relative; min-width: 0; overflow: hidden; background: var(--surface); border-radius: 12px; padding: .35rem .2rem .3rem; min-height: 64px; display: flex; flex-direction: column; gap: .2rem; cursor: pointer; border: 2px solid transparent; -webkit-tap-highlight-color: transparent; }
 .cal-cell.out { opacity: .35; }
+/* Planning horizon: estimated days are muted, days beyond it show only the date. */
+.cal-cell.estimate .s { color: var(--muted) !important; font-weight: 500; font-style: italic; }
+.cal-cell.unplanned .s, .cal-cell.unplanned .extra { visibility: hidden; }
+.week-day.unplanned .dot { visibility: hidden; }
 .cal-cell .d { align-self: flex-start; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .85rem; font-weight: 500; font-variant-numeric: tabular-nums; }
 .cal-cell.today .d { background: var(--accent); color: #fff; font-weight: 700; }
 .cal-cell .s { font-size: .6rem; font-weight: 600; letter-spacing: -.01em; line-height: 1.15; overflow: hidden; white-space: nowrap; display: flex; align-items: center; gap: 3px; }

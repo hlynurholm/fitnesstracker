@@ -7,6 +7,10 @@ export const PROGRAM = {
   // The live value is the program_start_date setting (Settings page, or the "Program start" workflow); this is only the fallback.
   startDateDefault: "2026-11-09",
   plannedWeeks: 16,
+  // How far ahead the calendar commits. Sessions are concrete through the end of next month, an estimate ("if the
+  // plan holds") through the end of the sixth month from now, and empty after that. The window rolls forward by
+  // itself on the 1st of each month.
+  horizon: { concreteMonths: 1, estimateMonths: 6 },
   body: { startWeightKg: 93, goalWeightKg: 85, heightCm: 188 },
   nutrition: {
     calories: 2450, proteinG: 170, funBudgetWeekKcal: 2500, maintenanceEstimate: 3000, lossPerWeekKg: [0.4, 0.6],
@@ -283,6 +287,19 @@ export function todayLocal() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// Last day of the month that is n months after the month of the given date.
+export function endOfMonth(dateStr, n = 0) {
+  const [y, m] = dateStr.split("-").map(Number);
+  return fmtDate(new Date(Date.UTC(y, m + n, 0)));
+}
+
+// Where a date sits in the planning window: "concrete", "estimate" or "none". The past is always concrete.
+export function planHorizon(dateStr, today = todayLocal()) {
+  const concreteTo = endOfMonth(today, PROGRAM.horizon.concreteMonths);
+  const estimateTo = endOfMonth(today, PROGRAM.horizon.estimateMonths);
+  return { horizon: dateStr <= concreteTo ? "concrete" : dateStr <= estimateTo ? "estimate" : "none", concreteTo, estimateTo };
+}
+
 export function weekNumber(dateStr, startDate) {
   const start = mondayOf(startDate);
   return Math.floor(daysBetween(start, dateStr) / 7) + 1; // can be 0 or negative before the start
@@ -381,6 +398,8 @@ export function resolveDay(dateStr, settings = {}) {
       ...(isoWeekday(dateStr) === 7 ? ["Padel (extra, not counted)"] : isoWeekday(dateStr) === 1 ? ["Badminton in the evening (extra, not counted)"] : []),
     ],
     startDate,
+    // horizon, concreteTo, estimateTo. settings.today lets tests pin the date.
+    ...planHorizon(dateStr, settings.today || todayLocal()),
   };
 }
 

@@ -65,7 +65,14 @@ class CalendarView {
     card.appendChild(grid);
     card.appendChild(h("div", { class: "cal-legend" },
       h("span", null, h("b", { class: "kind-lift" }, "Lift")), h("span", null, h("b", { class: "kind-run" }, "Run")),
-      h("span", null, h("b", { class: "ok" }, "Done")), h("span", null, h("i", { style: { background: "var(--accent)", width: "6px", height: "6px" } }), "Moved from the plan")));
+      h("span", null, h("b", { class: "ok" }, "Done")), h("span", null, h("i", { style: { background: "var(--accent)", width: "6px", height: "6px" } }), "Moved from the plan"),
+      h("span", null, h("b", { class: "muted", style: { fontStyle: "italic", fontWeight: 500 } }, "Estimate"))));
+    const month = this.days.filter((d) => d.date.startsWith(this.ym));
+    if (this.data.concreteTo && month.some((d) => d.horizon && d.horizon !== "concrete")) {
+      card.appendChild(h("p", { class: "muted small", style: { margin: ".7rem 0 0" } }, month.every((d) => d.horizon === "none")
+        ? `Not planned yet. The plan is fixed through ${fmtDay(this.data.concreteTo, true)} and estimated through ${fmtDay(this.data.estimateTo, true)}. It moves forward on the 1st of each month.`
+        : `Estimate, if the plan holds. Sessions are fixed through ${fmtDay(this.data.concreteTo, true)}; sets, paces and targets for later days are set closer to the time.`));
+    }
     c.appendChild(card);
     c.appendChild(this.summaryCard());
   }
@@ -73,7 +80,9 @@ class CalendarView {
   cell(d) {
     const w = this.mainWorkout(d);
     const inMonth = d.date.startsWith(this.ym);
-    const cls = ["cal-cell", d.kind, w ? w.status : "", inMonth ? "" : "out", d.date === this.today ? "today" : "", d.moved ? "moved" : "",
+    // Beyond the concrete window a day is an estimate, or not planned at all. Anything logged or moved is real.
+    const outlook = w || d.moved || !d.horizon || d.horizon === "concrete" ? "" : d.horizon === "estimate" ? "estimate" : "unplanned";
+    const cls = ["cal-cell", outlook === "unplanned" ? "" : d.kind, outlook, w ? w.status : "", inMonth ? "" : "out", d.date === this.today ? "today" : "", d.moved ? "moved" : "",
       this.swapFrom === d.date ? "swap-source" : this.swapFrom ? "swap-target" : ""].join(" ");
     const extras = d.workouts.filter((x) => x !== w && x.status !== "skipped");
     const el = h("div", { class: cls, role: "button", tabindex: "0", title: `${fmtDay(d.date)}: ${d.name}` },
@@ -88,7 +97,8 @@ class CalendarView {
 
   summaryCard() {
     const inMonth = this.days.filter((d) => d.date.startsWith(this.ym));
-    const planned = inMonth.filter((d) => d.kind !== "rest");
+    const planned = inMonth.filter((d) => d.kind !== "rest" && d.horizon !== "none");
+    if (!planned.length) return h("div", null);
     const done = planned.filter((d) => { const w = this.mainWorkout(d); return w && w.status === "done"; }).length;
     const past = planned.filter((d) => d.date < this.today).length;
     const skipped = planned.filter((d) => { const w = this.mainWorkout(d); return w && w.status === "skipped"; }).length;

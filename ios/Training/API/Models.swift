@@ -149,6 +149,10 @@ struct DayInfo: Decodable {
     let jumps: [Jump]?
     let extras: [String]?
     let startDate: String
+    /// concrete, estimate or none: how firm the plan is for this day. Absent on an older server.
+    var horizon: String? = nil
+    var concreteTo: String? = nil
+    var estimateTo: String? = nil
 }
 
 struct WeekDay: Decodable, Identifiable {
@@ -158,6 +162,7 @@ struct WeekDay: Decodable, Identifiable {
     let name: String
     let moved: Bool
     let workouts: [Workout]
+    var horizon: String? = nil
     var id: String { date }
 }
 
@@ -220,11 +225,19 @@ extension SetRow {
 struct BodyMetric: Decodable, Hashable { var date: String; var weight_kg: Double?; var source: String? }
 struct TestResult: Decodable, Hashable { var date: String; var test_key: String; var value: Double? }
 
+/// The planning horizon: sessions are fixed about a month ahead, estimated for some months after, then empty.
+enum Outlook {
+    case concrete, estimate, none
+    init(_ horizon: String?) { self = horizon == "estimate" ? .estimate : horizon == "none" ? .none : .concrete }
+}
+
 // MARK: Schedule (GET /api/schedule)
 
 struct Schedule: Decodable {
     let today: String
     let days: [ScheduleDay]
+    var concreteTo: String? = nil
+    var estimateTo: String? = nil
 }
 
 struct ScheduleDay: Decodable, Identifiable, Hashable {
@@ -239,7 +252,10 @@ struct ScheduleDay: Decodable, Identifiable, Hashable {
     let deload: Bool
     let testWeek: Bool
     let workouts: [Workout]
+    var horizon: String? = nil
     var id: String { date }
+    /// How firm the plan is: anything logged or moved is real, otherwise the server's planning horizon decides.
+    var outlook: Outlook { main != nil || moved ? .concrete : Outlook(horizon) }
     /// The workout that represents the day: the planned one, else anything not skipped.
     var main: Workout? { workouts.first { $0.template_key == templateKey } ?? workouts.first { $0.status != "skipped" } ?? workouts.first }
 }

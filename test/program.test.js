@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveDay, scheduledTemplateKey, weekNumber } from "../public/js/program.js";
+import { resolveDay, scheduledTemplateKey, weekNumber, planHorizon, endOfMonth } from "../public/js/program.js";
 
 const settings = { program_start_date: "2026-10-26" };
 
@@ -36,4 +36,31 @@ test("the default start is a Monday and days before it are flagged", () => {
   const before = resolveDay("2026-10-26", {});
   assert.equal(before.beforeStart, true);
   assert.equal(before.week, -1);
+});
+
+test("the plan is concrete through next month, an estimate for five more, then empty", () => {
+  const today = "2026-11-10";
+  assert.deepEqual(planHorizon("2026-06-24", today).horizon, "concrete", "the past stays concrete");
+  assert.equal(planHorizon("2026-11-10", today).horizon, "concrete");
+  assert.equal(planHorizon("2026-12-31", today).horizon, "concrete");
+  assert.equal(planHorizon("2027-01-01", today).horizon, "estimate");
+  assert.equal(planHorizon("2027-05-31", today).horizon, "estimate");
+  assert.equal(planHorizon("2027-06-01", today).horizon, "none");
+  assert.equal(planHorizon("2027-06-24", today).horizon, "none");
+  assert.deepEqual(planHorizon("2027-06-24", today), { horizon: "none", concreteTo: "2026-12-31", estimateTo: "2027-05-31" });
+});
+
+test("the window rolls forward on the 1st, and month ends are right", () => {
+  assert.equal(planHorizon("2027-01-31", "2026-11-30").horizon, "estimate");
+  assert.equal(planHorizon("2027-01-31", "2026-12-01").horizon, "concrete");
+  assert.equal(endOfMonth("2027-01-31", 1), "2027-02-28");
+  assert.equal(endOfMonth("2026-12-15", 1), "2027-01-31", "across the year end");
+  assert.equal(endOfMonth("2028-01-10", 1), "2028-02-29", "leap year");
+});
+
+test("resolveDay carries the horizon", () => {
+  const d = resolveDay("2027-06-24", { ...settings, today: "2026-11-10" });
+  assert.equal(d.horizon, "none");
+  assert.equal(d.templateKey, "easy_run", "the template is still resolved, so moving and logging keep working");
+  assert.equal(resolveDay("2026-11-12", { ...settings, today: "2026-11-10" }).horizon, "concrete");
 });

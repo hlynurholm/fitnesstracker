@@ -5,3 +5,7 @@ node_modules/
 .DS_Store
 test/out/
 .secrets*
+
+# iOS app build output
+ios/build/
+xcuserdata/

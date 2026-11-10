@@ -217,3 +217,84 @@ struct StatLine: View {
         }
     }
 }
+
+/// Tiny axis-free chart for dashboard cards: bars or a filled line, with gaps where a day has no value.
+struct Spark: View {
+    enum Style { case bars, line }
+    let values: [Double?]
+    var style: Style = .bars
+    var color: Color = Theme.Palette.accent
+    /// Dashed reference line, for a daily goal.
+    var goal: Double? = nil
+    var height: CGFloat = 44
+
+    var body: some View {
+        // One slot per day, named by its position, so a day without a value leaves a gap instead of closing up.
+        let slots = values.indices.map(String.init)
+        let points = Array(values.enumerated()).compactMap { i, v in v.map { (slot: String(i), index: i, value: $0) } }
+        let lo = points.map(\.value).min() ?? 0, hi = max(points.map(\.value).max() ?? 1, goal ?? 0)
+        let pad = max((hi - lo) * 0.15, 0.5)
+        Chart {
+            ForEach(points, id: \.index) { p in
+                if style == .bars {
+                    BarMark(x: .value("Day", p.slot), y: .value("Value", p.value), width: .ratio(0.72))
+                        .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+                        .foregroundStyle(p.index == values.count - 1 ? color : color.opacity(Theme.ChartStyle.dimmedBarOpacity + 0.1))
+                } else {
+                    AreaMark(x: .value("Day", p.slot), yStart: .value("Base", lo - pad), yEnd: .value("Value", p.value))
+                        .foregroundStyle(LinearGradient(colors: [color.opacity(Theme.ChartStyle.areaOpacity), color.opacity(0)], startPoint: .top, endPoint: .bottom))
+                        .interpolationMethod(.monotone)
+                    LineMark(x: .value("Day", p.slot), y: .value("Value", p.value))
+                        .foregroundStyle(color).lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)).interpolationMethod(.monotone)
+                }
+            }
+            if style == .line, let last = points.last {
+                PointMark(x: .value("Day", last.slot), y: .value("Value", last.value)).symbolSize(40).foregroundStyle(color)
+            }
+            if let goal {
+                RuleMark(y: .value("Goal", goal)).foregroundStyle(color.opacity(0.5)).lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
+            }
+        }
+        .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
+        .chartXScale(domain: slots)
+        .chartYScale(domain: (style == .bars ? 0 : lo - pad)...(hi + pad))
+        .frame(height: height)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Ring that fills towards a goal.
+struct ProgressRing: View {
+    let progress: Double
+    var color: Color = Theme.Palette.accent
+    var size: CGFloat = 34
+    var body: some View {
+        ZStack {
+            Circle().stroke(color.opacity(0.18), lineWidth: size * 0.14)
+            Circle().trim(from: 0, to: min(max(progress, 0), 1))
+                .stroke(color, style: StrokeStyle(lineWidth: size * 0.14, lineCap: .round)).rotationEffect(.degrees(-90))
+            if progress >= 1 { Image(systemName: "checkmark").font(.system(size: size * 0.36, weight: .bold)).foregroundStyle(color) }
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel("\(Int((progress * 100).rounded())) percent of goal")
+    }
+}
+
+/// Horizontal bar split into coloured parts, for sleep stages.
+struct SegmentBar: View {
+    let parts: [(value: Double, color: Color)]
+    var height: CGFloat = 10
+    var body: some View {
+        let total = max(parts.reduce(0) { $0 + $1.value }, 1)
+        GeometryReader { geo in
+            HStack(spacing: 2) {
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, p in
+                    RoundedRectangle(cornerRadius: height / 2, style: .continuous).fill(p.color)
+                        .frame(width: max(0, (geo.size.width - CGFloat(parts.count - 1) * 2) * p.value / total))
+                }
+            }
+        }
+        .frame(height: height)
+        .accessibilityHidden(true)
+    }
+}

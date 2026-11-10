@@ -72,6 +72,8 @@ The Worker can pull new runs from Garmin Connect by itself, using Garmin's Perso
 2. Store it as a Worker secret: `npx wrangler secret put GARMIN_API_KEY`
 3. Deploy. Every 30 minutes the Worker lists your recent running activities, downloads the original file of each one it has not seen, and runs it through the same parser as a manual upload. `POST /api/garmin/sync` does the same on demand (`{"days": 60}` looks further back, default 14) and `GET /api/garmin` shows how the last run went. The iOS app has a button for it on the Data tab.
 
+The same run also pulls the daily health data the watch records: steps, floors, calories, heart rate, intensity minutes, stress, Body Battery, breathing rate, blood oxygen, sleep, HRV and weight. It goes into the `daily_metrics` table, one row per day, as a flat object keyed by Garmin's own field names (`movement.steps.value`, `heartRate.restingValue`, `sleep.sleepTimeSeconds`, ...), so a metric Garmin adds later needs no schema change. The first run fetches about four months, later runs the last three days. `GET /api/metrics?days=120` returns it, and it is part of `export.json`.
+
 Without the secret nothing happens. A file you already uploaded by hand under Garmin's own name (`<activity id>_ACTIVITY.fit`) is not imported twice. `GARMIN_ACTIVITY_TYPE` in `wrangler.jsonc` picks the activity type (`running`; empty for everything).
 
 The code follows Garmin's published reference but has only been run against the stand-in server in `test/garmin-stub.mjs`, not yet against Garmin itself. `bash test/garmin-sync.sh` (see its header) runs that check.
@@ -118,6 +120,7 @@ All routes need the session cookie or `Authorization: Bearer <API_TOKEN>`.
 | `GET/POST /api/reports`, `GET/DELETE /api/reports/:id` | Reports shown in the app |
 | `GET/PUT /api/settings` | Start date, phase override, targets |
 | `GET /api/garmin`, `POST /api/garmin/sync` | Automatic Garmin import: status of the last run, and run it now |
+| `GET /api/metrics?days=` | Daily health metrics from the watch, one flat object per day |
 
 ## Project layout
 

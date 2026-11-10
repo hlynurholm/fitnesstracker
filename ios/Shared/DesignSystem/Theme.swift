@@ -24,6 +24,12 @@ enum Theme {
         static let rest = dynamic(light: 0x8E8E93, dark: 0x8E8E93)
         static let test = dynamic(light: 0xAF52DE, dark: 0xBF5AF2)
 
+        // Health metrics on the dashboard
+        static let heart = dynamic(light: 0xFF2D55, dark: 0xFF375F)
+        static let sleep = dynamic(light: 0x5856D6, dark: 0x5E5CE6)
+        static let energy = dynamic(light: 0xFF9500, dark: 0xFF9F0A)
+        static let calm = dynamic(light: 0x30B0C7, dark: 0x40C8E0)
+
         /// Chart series colors, in order.
         static let series: [Color] = [accent, warn, ok, test, danger, rest]
 

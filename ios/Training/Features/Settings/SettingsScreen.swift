@@ -49,6 +49,14 @@ struct SettingsScreen: View {
         Screen {
             if let error { ErrorCard(message: error) { await load() } }
 
+            // Uploads, Garmin and Apple Health sync, exports and reports.
+            NavigationLink { DataScreen() } label: {
+                Row(title: "Data and sync", subtitle: "Garmin, Apple Health, uploads, exports and reports") {
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.Palette.muted)
+                }
+            }
+            .buttonStyle(.plain).card()
+
             VStack(alignment: .leading, spacing: Theme.Space.m) {
                 CardTitle("Plan")
                 LabeledField(label: "Week 1 starts on (Monday)") {

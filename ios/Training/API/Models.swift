@@ -342,7 +342,28 @@ struct Report: Decodable, Identifiable, Hashable {
 
 // MARK: Dashboard (GET /api/dashboard) and diet (GET /api/diet)
 
+/// GET /api/metrics: daily health metrics from the watch. Each day is a flat set of Garmin field names to values.
+struct MetricsResponse: Decodable {
+    let days: [MetricDay]
+}
+
+struct MetricDay: Decodable {
+    struct Value: Decodable {
+        let number: Double?
+        let text: String?
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            number = try? c.decode(Double.self)
+            text = number == nil ? try? c.decode(String.self) : nil
+        }
+    }
+    let date: String
+    let data: [String: Value]
+}
+
 struct Dashboard: Decodable {
+    /// Today's planned session.
+    var today: DayInfo? = nil
     let settings: Settings
     let workouts: [Workout]
     let sets: [SetRow]

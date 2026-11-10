@@ -19,7 +19,7 @@ Shared/DesignSystem/Components.swift  Card, Badge, Tile, Row, Banner, buttons, f
 Shared/DesignSystem/Charts.swift      TrendChart, BarsChart, StatLine and the chart style tokens
 Shared/WorkoutActivityAttributes.swift  Live Activity payload (app and widget extension)
 Training/API/                         API client (Keychain, offline write queue, read cache) and wire models
-Training/Features/                    Today, Calendar, Progress, Diet, Data, Settings
+Training/Features/                    Home (dashboard), Today, Calendar, Progress, Diet, Data, Settings
 Training/LiveActivity/LiveWorkout.swift  Live Activity controller and the interval runner
 TrainingWidgets/                      Lock screen and Dynamic Island views
 Config/                               Info.plist fragments for both targets
@@ -41,6 +41,15 @@ has them as text. Rep count and lengths come from the template's `intervals`.
 To keep cues and the lock screen on time while the phone is locked, the interval runner plays a silent audio loop
 (background mode `audio`). That is fine for a personal build and would not pass App Store review. The replacement is
 Live Activity push updates sent by the Worker.
+
+## Dashboard
+
+Home is a grid of cards: watch metrics from `GET /api/metrics`, plus training, weight and nutrition from the data the
+other tabs use. `HomeModel.swift` holds the card list (`CardKind`), what each watch metric card shows (`MetricSpec`,
+keyed by Garmin's field names) and the layout. Customize (top right) reorders cards, sets each to half or full width
+and hides them; the layout is saved on the phone. A card with no data stays out of the grid until there is some.
+To add a card for another metric, add a `CardKind` case and a `MetricSpec` entry. "Everything from your watch" lists
+every stored value, including those without a card.
 
 ## Automatic data
 

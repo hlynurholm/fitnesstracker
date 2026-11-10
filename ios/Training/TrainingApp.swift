@@ -19,6 +19,7 @@ struct TrainingApp: App {
 
 private struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @State private var tab = 0
 
     var body: some View {
         let api = API.shared, app = AppModel.shared
@@ -58,12 +59,12 @@ private struct RootView: View {
     }
 
     private var tabs: some View {
-        TabView {
-            Tab("Today", systemImage: "calendar.day.timeline.left") { NavigationStack { DayScreen(date: Day.today(), isRoot: true) } }
-            Tab("Calendar", systemImage: "calendar") { NavigationStack { CalendarScreen() } }
-            Tab("Progress", systemImage: "chart.line.uptrend.xyaxis") { NavigationStack { ProgressScreen() } }
-            Tab("Diet", systemImage: "fork.knife") { NavigationStack { DietScreen() } }
-            Tab("Data", systemImage: "square.and.arrow.up") { NavigationStack { DataScreen() } }
+        TabView(selection: $tab) {
+            Tab("Home", systemImage: "square.grid.2x2.fill", value: 0) { NavigationStack { HomeScreen { tab = 1 } } }
+            Tab("Today", systemImage: "calendar.day.timeline.left", value: 1) { NavigationStack { DayScreen(date: Day.today()) } }
+            Tab("Calendar", systemImage: "calendar", value: 2) { NavigationStack { CalendarScreen() } }
+            Tab("Progress", systemImage: "chart.line.uptrend.xyaxis", value: 3) { NavigationStack { ProgressScreen() } }
+            Tab("Diet", systemImage: "fork.knife", value: 4) { NavigationStack { DietScreen() } }
         }
     }
 }

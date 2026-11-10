@@ -2,7 +2,10 @@ import SwiftUI
 
 @main
 struct TrainingApp: App {
-    init() { LiveWorkout.endLeftovers() }
+    init() {
+        Theme.Typography.applyToNavigationBars()
+        LiveWorkout.endLeftovers()
+    }
 
     var body: some Scene {
         WindowGroup {

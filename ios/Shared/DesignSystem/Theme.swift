@@ -52,16 +52,34 @@ enum Theme {
     }
 
     enum Typography {
-        static let screenTitle = Font.system(.largeTitle, weight: .bold)
-        static let title = Font.system(.title2, weight: .bold)
-        static let headline = Font.system(.headline)
+        /// Typeface for headings, labels, buttons and numbers. Body text keeps the standard face for long reading.
+        /// Set to `.default` to turn the rounded look off everywhere, navigation titles included.
+        static let headingDesign: Font.Design = .rounded
+
+        static let screenTitle = Font.system(.largeTitle, design: headingDesign, weight: .bold)
+        static let title = Font.system(.title2, design: headingDesign, weight: .bold)
+        static let headline = Font.system(.headline, design: headingDesign)
         static let body = Font.system(.body)
         static let callout = Font.system(.callout)
         static let caption = Font.system(.footnote)
-        static let label = Font.system(.caption, weight: .semibold)
+        static let label = Font.system(.caption, design: headingDesign, weight: .semibold)
         /// Big numbers: tiles, timers.
-        static let numeral = Font.system(.title2, design: .rounded, weight: .semibold).monospacedDigit()
-        static let timer = Font.system(.largeTitle, design: .rounded, weight: .semibold).monospacedDigit()
+        static let numeral = Font.system(.title2, design: headingDesign, weight: .semibold).monospacedDigit()
+        static let timer = Font.system(.largeTitle, design: headingDesign, weight: .semibold).monospacedDigit()
+
+        /// Navigation bar titles are drawn by UIKit, so they get the heading typeface through the bar's appearance.
+        /// Call once at launch.
+        static func applyToNavigationBars() {
+            let bar = UINavigationBar.appearance()
+            bar.largeTitleTextAttributes = [.font: uiFont(.largeTitle, weight: .bold)]
+            bar.titleTextAttributes = [.font: uiFont(.headline, weight: .semibold)]
+        }
+
+        private static func uiFont(_ style: UIFont.TextStyle, weight: UIFont.Weight) -> UIFont {
+            let base = UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: style).pointSize, weight: weight)
+            guard headingDesign == .rounded, let rounded = base.fontDescriptor.withDesign(.rounded) else { return base }
+            return UIFont(descriptor: rounded, size: 0)
+        }
     }
 
     private static func dynamic(light: UInt32, dark: UInt32) -> Color {

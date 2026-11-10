@@ -195,7 +195,7 @@ export const PROGRAM = {
     },
     intervals_6x2: {
       key: "intervals_6x2", name: "Intervals", kind: "run", subtitle: "6 × 2 min at 5:30/km, 2 min walk", duration: "30 to 45 min",
-      detail: "After a 10 min easy jog, run 6 × 2 min at 5:30/km with 2 min walk between. Heart rate around 165 to 180 by the end of each rep. Hard means talking is difficult but you can keep the pace steady across every rep. Every 2 weeks, 5 s/km faster if the last rep felt controlled.",
+      detail: "After a 10 min easy jog, run 6 × 2 min at 5:30/km with 2 min walk between. Hold the pace from the first second instead of starting fast and fading. Heart rate around 165 to 180 by the end of each rep. Hard means talking is difficult but you can keep the pace steady across every rep. Every 2 weeks, 5 s/km faster if the last rep felt controlled.",
       pace: "5:30/km",
       intervals: { reps: 6, workSec: 120, restSec: 120 },
     },

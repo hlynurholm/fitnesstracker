@@ -12,8 +12,9 @@ import { setSettings } from "./db.js";
 import { isFit } from "./parsers/fit.js";
 
 const DEFAULT_BASE = "https://personal.connectapi.garmin.com";
-const MAX_NEW_PER_RUN = 8; // stays well inside the Workers subrequest limit
+const MAX_NEW_PER_RUN = 3; // each new file costs several database queries; the next run picks up the rest
 const DEFAULT_DAYS = 14;
+const HISTORY_DAYS = 120; // daily metrics fetched the first time
 
 export function garminConfigured(env) {
   return typeof env.GARMIN_API_KEY === "string" && env.GARMIN_API_KEY.length > 0;
@@ -100,10 +101,90 @@ function offsetMinutes(a) {
   return isNaN(local) || isNaN(gmt) ? null : Math.round((local - gmt) / 60000);
 }
 
+// ---------- daily health metrics ----------
+
+// Fields that are identifiers, timestamps or nested event lists rather than measurements.
+const SKIP = /uuid|userProfilePk|userProfilePK|^id$|timestamp|featureVersion|feedbackEvent|activityEvents|wellnessChronology|jetLag|algorithmVersion|^source$|^includes|calendarDate|summaryDate|dailyNapDTOS|deviceId|userNote|kidSleepNote|ageGroup|sleepVersion|createTimeStamp|samplePk|sourceType/i;
+
+// Flattens one day's object into { "group.field": number | short string }.
+export function flattenMetrics(obj, prefix = "", out = {}) {
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (v == null || SKIP.test(k)) continue;
+    const name = prefix ? `${prefix}.${k}` : k;
+    if (typeof v === "number" && isFinite(v)) out[name] = v;
+    else if (typeof v === "string" && v.length <= 40 && !/^\d{4}-\d{2}-\d{2}T/.test(v)) out[name] = v;
+    else if (typeof v === "object" && !Array.isArray(v)) flattenMetrics(v, name, out);
+  }
+  return out;
+}
+
+function chunks(from, to, size) {
+  const out = [];
+  for (let d = new Date(from + "T00:00:00Z"); isoDate(d) <= to; d = new Date(d.getTime() + size * 86400000)) {
+    const end = new Date(Math.min(d.getTime() + (size - 1) * 86400000, Date.parse(to + "T00:00:00Z")));
+    out.push([isoDate(d), isoDate(end)]);
+  }
+  return out;
+}
+
+// Pulls every daily metric Garmin has for the last `days` days into daily_metrics. Each source is fetched on its own,
+// so one that fails (or that the watch does not record) does not stop the others; failures come back in `errors`.
+export async function syncGarminDaily(env, { days = 3 } = {}) {
+  const result = { days: 0, errors: [] };
+  if (!garminConfigured(env)) { result.errors.push("GARMIN_API_KEY is not set"); return result; }
+  const base = (env.GARMIN_API_BASE || DEFAULT_BASE).replace(/\/+$/, "");
+  const span = Math.min(366, Math.max(1, Number(days) || 3));
+  const to = isoDate(new Date(Date.now() + 86400000)); // tomorrow in UTC, so "today" is covered in every time zone
+  const from = isoDate(new Date(Date.now() - span * 86400000));
+  const byDate = {};
+  const put = (date, prefix, obj) => { if (/^\d{4}-\d{2}-\d{2}$/.test(date || "")) flattenMetrics(obj, prefix, (byDate[date] = byDate[date] || {})); };
+  let auth;
+  try { auth = { headers: { Authorization: `Bearer ${await accessToken(env, base)}`, Accept: "application/json" } }; }
+  catch (e) { result.errors.push(e.message || String(e)); return result; }
+  const get = async (path, what) => {
+    try { return await (await garminFetch(base, path, auth, what)).json(); }
+    catch (e) { result.errors.push(e.message || String(e)); return null; }
+  };
+
+  // Steps, floors, calories, heart rate, intensity minutes, stress, Body Battery, hydration, respiration, pulse ox.
+  const summary = await get(`/usersummary-service/v2/dailysummaries?startDate=${from}&endDate=${to}`, "Daily summaries");
+  for (const d of (summary && (summary.data || summary)) || []) put(String(d.calendarDate || "").slice(0, 10), "", d);
+  // Sleep, at most 31 days per request.
+  for (const [a, b] of chunks(from, to, 31)) {
+    const sleep = await get(`/sleep-service/sleep/dailySleepSummariesByDate?startDate=${a}&endDate=${b}`, "Sleep");
+    for (const d of Array.isArray(sleep) ? sleep : []) put(String(d.calendarDate || "").slice(0, 10), "sleep", d);
+  }
+  // Overnight heart rate variability.
+  for (const [a, b] of chunks(from, to, 28)) {
+    const hrv = await get(`/hrv-service/hrv/daily/${a}/${b}`, "HRV");
+    for (const d of (hrv && hrv.hrvSummaries) || []) put(String(d.calendarDate || "").slice(0, 10), "hrv", d);
+  }
+  // Weight and body composition logged in Garmin. Kept as Garmin sends it; the app's own weigh-ins are not touched.
+  const weight = await get(`/weight-service/weight/range/${from}/${to}`, "Weight");
+  for (const d of (weight && weight.dailyWeightSummaries) || []) put(String(d.summaryDate || "").slice(0, 10), "weight", d.latestWeight || {});
+
+  const dates = Object.keys(byDate).filter((d) => Object.keys(byDate[d]).length).sort();
+  if (!dates.length) return result;
+  // Merge into what is stored, so a source that failed this time keeps its earlier values.
+  const { results: existing } = await env.DB.prepare("SELECT date, data FROM daily_metrics WHERE date >= ? AND date <= ?").bind(dates[0], dates[dates.length - 1]).all();
+  const old = Object.fromEntries(existing.map((r) => { try { return [r.date, JSON.parse(r.data)]; } catch { return [r.date, {}]; } }));
+  for (let i = 0; i < dates.length; i += 40) { // 2 bound values per row, D1 allows 100 per statement
+    const part = dates.slice(i, i + 40);
+    await env.DB.prepare(`INSERT INTO daily_metrics (date, data, updated_at) VALUES ${part.map(() => "(?, ?, datetime('now'))").join(", ")}
+      ON CONFLICT(date) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`)
+      .bind(...part.flatMap((d) => [d, JSON.stringify({ ...(old[d] || {}), ...byDate[d] })])).run();
+  }
+  result.days = dates.length;
+  return result;
+}
+
 // ingest is the upload pipeline from api.js, passed in to avoid a circular import.
-export async function syncGarmin(env, settings, ingest, { days = DEFAULT_DAYS } = {}) {
-  const result = { at: new Date().toISOString(), configured: garminConfigured(env), ok: false, found: 0, imported: [], already: 0, failed: [], error: null };
+export async function syncGarmin(env, settings, ingest, { days = DEFAULT_DAYS, dailyDays } = {}) {
+  const result = { at: new Date().toISOString(), configured: garminConfigured(env), ok: false, found: 0, imported: [], already: 0, failed: [], error: null, daily: null };
   if (!result.configured) { result.error = "GARMIN_API_KEY is not set"; return result; }
+  // Daily health metrics: the last few days on a normal run, and a few months the first time.
+  const { n } = (await env.DB.prepare("SELECT COUNT(*) AS n FROM daily_metrics").first()) || { n: 0 };
+  result.daily = await syncGarminDaily(env, { days: dailyDays || (n ? 3 : HISTORY_DAYS) });
   const base = (env.GARMIN_API_BASE || DEFAULT_BASE).replace(/\/+$/, "");
   const type = env.GARMIN_ACTIVITY_TYPE === undefined ? "running" : env.GARMIN_ACTIVITY_TYPE; // "" means every type
   try {
@@ -116,13 +197,14 @@ export async function syncGarmin(env, settings, ingest, { days = DEFAULT_DAYS } 
     if (!Array.isArray(list)) throw new Error("Listing activities: expected a JSON array");
     result.found = list.length;
 
+    // Garmin's own export names the file <id>_ACTIVITY.fit, so a file uploaded by hand counts as already imported.
+    const { results: files } = await env.DB.prepare("SELECT filename FROM uploads WHERE filename IS NOT NULL ORDER BY id DESC LIMIT 2000").all();
+    const have = new Set(files.map((f) => (String(f.filename).match(/^(\d+)[_.]/) || [])[1]).filter(Boolean));
     let fetched = 0;
     for (const a of list.slice().reverse()) { // oldest first
       const id = String(a.activityId ?? "");
       if (!/^\d+$/.test(id)) continue;
-      // Garmin's own export names the file <id>_ACTIVITY.fit, so a file uploaded by hand counts as already imported.
-      const seen = await env.DB.prepare("SELECT id FROM uploads WHERE filename LIKE ? ESCAPE '\\' OR filename LIKE ? LIMIT 1").bind(`${id}\\_%`, `${id}.%`).first();
-      if (seen) { result.already++; continue; }
+      if (have.has(id)) { result.already++; continue; }
       if (fetched >= MAX_NEW_PER_RUN) { result.more = true; break; }
       fetched++;
       try {
@@ -146,7 +228,8 @@ export async function syncGarmin(env, settings, ingest, { days = DEFAULT_DAYS } 
   } catch (e) {
     result.error = e.message || String(e);
   }
+  if (result.daily.errors.length) { result.ok = false; result.error = [result.error, `Daily metrics: ${result.daily.errors[0]}`].filter(Boolean).join(" ") ; }
   // The outcome of the last run is kept with the settings so the apps can show it. It holds no secrets.
-  try { await setSettings(env, { garmin_last_sync: JSON.stringify({ at: result.at, ok: result.ok, found: result.found, imported: result.imported.length, already: result.already, error: result.error }) }); } catch {}
+  try { await setSettings(env, { garmin_last_sync: JSON.stringify({ at: result.at, ok: result.ok, found: result.found, imported: result.imported.length, already: result.already, daily_days: result.daily.days, error: result.error }) }); } catch {}
   return result;
 }

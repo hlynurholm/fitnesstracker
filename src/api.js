@@ -270,8 +270,15 @@ async function route(method, p, request, env, url, settings) {
     if (!b && method === "GET") return { configured: garminConfigured(env), last: parseJsonField(settings.garmin_last_sync) };
     if (b === "sync" && method === "POST") {
       const body = await request.json().catch(() => ({}));
-      return syncGarmin(env, settings, ingestFile, { days: body && body.days });
+      return syncGarmin(env, settings, ingestFile, { days: body && body.days, dailyDays: body && body.daily_days });
     }
+  }
+
+  // Daily health metrics imported from the watch, oldest first. Each day is a flat object of metric name to value.
+  if (a === "metrics" && method === "GET") {
+    const days = Math.min(400, Math.max(1, Number(url.searchParams.get("days")) || 120));
+    const { results } = await env.DB.prepare("SELECT date, data FROM daily_metrics WHERE date >= ? ORDER BY date").bind(addDays(todayLocal(), -days)).all();
+    return { today: todayLocal(), days: results.map((r) => ({ date: r.date, data: parseJsonField(r.data, {}) })) };
   }
 
   throw new HttpError(404, `No route for ${method} /api/${p.join("/")}`);
@@ -676,6 +683,7 @@ async function exportAll(env, settings, includeRaw) {
     settings,
     workouts: (await q("SELECT * FROM workouts ORDER BY date, id")).map((w) => rowWithJson(w, ["plan_json", "checklist_json"])),
     workout_notes: await q("SELECT * FROM workout_notes ORDER BY workout_id, id"),
+    daily_metrics: (await q("SELECT date, data FROM daily_metrics ORDER BY date")).map((r) => ({ date: r.date, ...parseJsonField(r.data, {}) })),
     sets: await q("SELECT s.*, w.date FROM sets s JOIN workouts w ON w.id = s.workout_id ORDER BY w.date, s.workout_id, s.exercise_key, s.set_index"),
     body_metrics: await q("SELECT * FROM body_metrics ORDER BY date"),
     tests: await q("SELECT * FROM tests ORDER BY date"),

@@ -30,6 +30,17 @@ enum Theme {
         static let energy = dynamic(light: 0xFF9500, dark: 0xFF9F0A)
         static let calm = dynamic(light: 0x30B0C7, dark: 0x40C8E0)
 
+        /// Colour along a route or pace chart: 0 is the slowest part of the run, 1 the fastest.
+        static func effort(_ t: Double) -> Color {
+            let stops: [UIColor] = [UIColor(calm), UIColor(energy), UIColor(heart)]
+            let x = min(max(t, 0), 1) * Double(stops.count - 1)
+            let i = min(Int(x), stops.count - 2)
+            var (r1, g1, b1, a1): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0), (r2, g2, b2, a2): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+            stops[i].getRed(&r1, green: &g1, blue: &b1, alpha: &a1); stops[i + 1].getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+            let f = CGFloat(x - Double(i))
+            return Color(red: r1 + (r2 - r1) * f, green: g1 + (g2 - g1) * f, blue: b1 + (b2 - b1) * f)
+        }
+
         /// Chart series colors, in order.
         static let series: [Color] = [accent, warn, ok, test, danger, rest]
 

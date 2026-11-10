@@ -210,7 +210,16 @@ async function route(method, p, request, env, url, settings) {
     if (b && method === "GET") {
       const row = await env.DB.prepare("SELECT * FROM activities WHERE id = ?").bind(Number(b)).first();
       if (!row) throw new HttpError(404, "Not found");
-      return rowWithJson(row, ["laps_json", "splits_json", "hr_zones_json", "track_json"]);
+      const act = rowWithJson(row, ["laps_json", "splits_json", "hr_zones_json", "track_json"]);
+      // Activities stored before the route was kept: read it from the original file, once.
+      if (row.upload_id && Array.isArray(act.track) && act.track.length && !("lat" in act.track[0])) {
+        const track = await trackFromUpload(env, row, settings).catch(() => null);
+        if (track) {
+          act.track = track;
+          await env.DB.prepare("UPDATE activities SET track_json = ? WHERE id = ?").bind(JSON.stringify(track), row.id).run();
+        }
+      }
+      return act;
     }
     if (b && (method === "PATCH" || method === "PUT")) {
       const body = await readJson(request);
@@ -608,6 +617,17 @@ async function handleUpload(request, env, settings) {
     results.push(await ingestFile(env, settings, { filename: f.name, contentType: f.type, bytes, workoutId, dateHint, sourceHint, tz }));
   }
   return { uploads: results };
+}
+
+// Parses an activity's original file again and returns its track, now with positions. Null when the file was not kept.
+async function trackFromUpload(env, activity, settings) {
+  const up = await env.DB.prepare("SELECT filename, content_type, raw, raw_encoding FROM uploads WHERE id = ?").bind(activity.upload_id).first();
+  if (!up || !up.raw) return null;
+  let bytes = blobToBytes(up.raw);
+  if (up.raw_encoding === "gzip") bytes = await gunzip(bytes);
+  const parsed = parseUpload({ filename: up.filename, contentType: up.content_type, bytes, sourceHint: "garmin", maxHr: num(settings.max_hr) || PROGRAM.heartRate.maxBpm });
+  const match = parsed.activities.length === 1 ? parsed.activities[0] : parsed.activities.find((a) => a.start_time === activity.start_time);
+  return match && Array.isArray(match.track) && match.track.length ? match.track : null;
 }
 
 // Stores one file and everything parsed from it: the upload row, activities matched to a workout, nutrition days and

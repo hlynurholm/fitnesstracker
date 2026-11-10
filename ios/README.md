@@ -42,6 +42,13 @@ To keep cues and the lock screen on time while the phone is locked, the interval
 (background mode `audio`). That is fine for a personal build and would not pass App Store review. The replacement is
 Live Activity push updates sent by the Worker.
 
+## Runs
+
+`Features/Runs/RunScreen.swift` is the page for one run: the route on a map coloured by pace, then pace, heart rate
+and elevation over distance, splits and heart rate zones. It opens from the Last run widget, the recent runs list in
+Progress and the activity on a day. The route comes from `lat`/`lon` in the activity's track; activities imported
+before the track kept positions get them filled in from the stored file the first time they are opened.
+
 ## Dashboard
 
 Home is a grid of widgets: watch metrics from `GET /api/metrics`, plus training, weight and nutrition from the data
@@ -49,13 +56,15 @@ the other tabs use. `HomeModel.swift` holds the widget list (`CardKind`), what e
 (`MetricSpec`, keyed by Garmin's field names) and the layout, which is saved on the phone.
 
 - Touch and hold a widget: half or full width, the range of days its chart covers (2 days to 6 months, per widget),
-  "use this range for all widgets" (asks twice), remove.
+  "use this range and resolution for all widgets" (asks twice, sets both on every widget), remove.
 - The grid button enters edit mode: drag a widget to move it, drag or tap the handle in its bottom right corner to
   resize it, tap the minus in its top left corner to remove it, and use the plus button to add widgets back.
 - The same menu sets each widget's resolution (every day, 2 or 3 day, weekly, 2 week or monthly averages) and chart
   type (bars or line). The menu always ticks the setting in use; there is no "auto" entry. Until a choice is made a
   widget uses `CardSetting.span`, `every` and `chartStyle`. A range longer than the stored history asks the server
   once for older data.
+- "Next session" shows today's session until it is done, then tomorrow's. "Last run" draws the route of the latest
+  run. Both open the full page on tap.
 - A widget with no data stays out of the grid until there is some. To add a widget for another metric, add a
   `CardKind` case and a `MetricSpec` entry. "Everything from your watch" lists every stored value.
 

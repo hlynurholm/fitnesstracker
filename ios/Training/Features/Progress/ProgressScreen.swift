@@ -6,6 +6,7 @@ struct ProgressScreen: View {
     @State private var data: Dashboard?
     @State private var error: String?
     @State private var lift = ""
+    @State private var runs: [GarminActivity] = []
 
     var body: some View {
         Screen {
@@ -30,6 +31,7 @@ struct ProgressScreen: View {
 
     private func load() async {
         do { data = try await API.shared.get("/api/dashboard", cache: true); error = nil } catch { self.error = error.localizedDescription }
+        if let all: [GarminActivity] = try? await API.shared.get("/api/activities", cache: true) { runs = all.filter { $0.isRun && ($0.distance_m ?? 0) > 0 } }
     }
 
     // MARK: Derived data
@@ -166,6 +168,20 @@ struct ProgressScreen: View {
                 TrendChart(series: (hard.isEmpty ? [] : [TrendSeries(name: "Intervals and tests", color: Theme.Palette.run, points: hard)])
                     + (easy.isEmpty ? [] : [TrendSeries(name: "Easy runs", color: Theme.Palette.ok, points: easy)]),
                            lowerIsBetter: true, height: 180, format: { Fmt.time($0) })
+            }
+            if !runs.isEmpty {
+                // The latest recordings from the watch. Each opens with its route, pace and heart rate.
+                Divided {
+                    ForEach(runs.prefix(5)) { run in
+                        NavigationLink { RunScreen(id: run.id) } label: {
+                            Row(title: "\(Day.label(run.day)) · \(String(format: "%.2f km", (run.distance_m ?? 0) / 1000))",
+                                subtitle: [run.duration_s.map { Fmt.time($0) }, run.avg_pace_s_per_km.map { Fmt.pace($0) }, run.avg_hr.map { "\(Int($0)) bpm" }].compactMap { $0 }.joined(separator: " · ")) {
+                                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.Palette.muted)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
             HeartRateZones(heartRate: program.heartRate)
         }

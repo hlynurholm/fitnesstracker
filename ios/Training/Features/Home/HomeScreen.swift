@@ -13,8 +13,10 @@ struct HomeScreen: View {
     @State private var adding = false
     @State private var dragging: CardKind?
     /// "Use this range for all widgets" asks twice: first this dialog, then an alert.
-    @State private var askApply: Int?
-    @State private var confirmApply: Int?
+    @State private var askApply: ApplyAll?
+    @State private var confirmApply: ApplyAll?
+    @State private var openDay: String?
+    @State private var openRun: Int?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -54,18 +56,20 @@ struct HomeScreen: View {
             }
         }
         .sheet(isPresented: $adding) { AddWidgetSheet(model: model).presentationDetents([.medium, .large]) }
-        .confirmationDialog("Use \(RangeOption.label(askApply ?? 0)) for all widgets?", isPresented: Binding(get: { askApply != nil }, set: { if !$0 { askApply = nil } }), titleVisibility: .visible, presenting: askApply) { days in
+        .confirmationDialog("Use \(askApply?.label ?? "") for all widgets?", isPresented: Binding(get: { askApply != nil }, set: { if !$0 { askApply = nil } }), titleVisibility: .visible, presenting: askApply) { choice in
             Button("Apply to all widgets") {
                 // Second check, shown once this dialog has closed.
-                Task { try? await Task.sleep(for: .milliseconds(400)); confirmApply = days }
+                Task { try? await Task.sleep(for: .milliseconds(400)); confirmApply = choice }
             }
-        } message: { _ in Text("Every widget with a chart will show this range.") }
-        .alert("Are you sure?", isPresented: Binding(get: { confirmApply != nil }, set: { if !$0 { confirmApply = nil } }), presenting: confirmApply) { days in
-            Button("Yes, change all widgets", role: .destructive) { withAnimation { model.applyRangeToAll(days) } }
+        } message: { _ in Text("Every widget with a chart will show this range at this resolution.") }
+        .alert("Are you sure?", isPresented: Binding(get: { confirmApply != nil }, set: { if !$0 { confirmApply = nil } }), presenting: confirmApply) { choice in
+            Button("Yes, change all widgets", role: .destructive) { withAnimation { model.applyToAll(range: choice.range, every: choice.every) } }
             Button("Cancel", role: .cancel) {}
-        } message: { days in
-            Text("This replaces the range on \(model.layout.filter { $0.kind.hasRange && !$0.hidden }.count) widgets with \(RangeOption.label(days)). Ranges you set one by one will be lost.")
+        } message: { choice in
+            Text("This sets \(model.layout.filter { $0.kind.hasRange && !$0.hidden }.count) widgets to \(choice.label). Ranges and resolutions you set one by one will be lost.")
         }
+        .navigationDestination(item: $openDay) { DayScreen(date: $0) }
+        .navigationDestination(item: $openRun) { RunScreen(id: $0) }
         .task { await model.load() }
         .refreshable { await model.load() }
         .onChange(of: scenePhase) { _, phase in if phase == .active, model.loaded { Task { await model.load() } } }
@@ -114,7 +118,8 @@ struct HomeScreen: View {
     @ViewBuilder
     private func content(_ setting: CardSetting, wide: Bool) -> some View {
         switch setting.kind {
-        case .today: TodayCard(model: model, open: openToday)
+        case .today: SessionCard(model: model) { date in if date == model.today { openToday() } else { openDay = date } }
+        case .lastRun: LastRunCard(model: model, wide: wide) { openRun = $0 }
         case .week: WeekCard(model: model)
         case .weight: WeightCard(model: model, setting: setting, wide: wide)
         case .nutrition: NutritionCard(model: model, setting: setting, wide: wide)
@@ -192,12 +197,19 @@ struct HomeScreen: View {
             } label: {
                 Label("Chart: \(line ? "line" : "bars")", systemImage: line ? "chart.xyaxis.line" : "chart.bar.fill")
             }
-            Button { askApply = span } label: { Label("Use \(RangeOption.label(span)) for all widgets", systemImage: "square.on.square") }
+            Button { askApply = ApplyAll(range: span, every: every) } label: { Label("Use this range and resolution for all widgets", systemImage: "square.on.square") }
         }
         Divider()
         Button { startEditing() } label: { Label("Edit dashboard", systemImage: "square.grid.2x2") }
         Button(role: .destructive) { withAnimation(.snappy) { model.update(setting.kind) { $0.hidden = true } } } label: { Label("Remove widget", systemImage: "minus.circle") }
     }
+}
+
+/// A range and resolution about to be given to every widget.
+private struct ApplyAll {
+    let range: Int
+    let every: Int
+    var label: String { "\(RangeOption.label(range)), \(ResolutionOption.label(every))" }
 }
 
 /// Moves the dragged widget to the place of the widget it is dragged over.
@@ -422,30 +434,70 @@ private struct IntensityCard: View {
 
 // MARK: Training cards
 
-private struct TodayCard: View {
+/// The session to do next: today's until it is done, then tomorrow's.
+private struct SessionCard: View {
     let model: HomeModel
-    let open: () -> Void
+    let open: (String) -> Void
     var body: some View {
-        if let day = model.dash?.today {
-            let t = day.template
-            let workout = model.dash?.workouts.first { $0.date == day.date && $0.template_key == day.templateKey }
-            Button(action: open) {
+        if let s = model.nextSession {
+            Button { open(s.date) } label: {
                 VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                    CardHeader(kind: .today) {
-                        Badge(workout?.status == "done" ? "Done" : workout?.status == "skipped" ? "Skipped" : workout?.started_at != nil ? "In progress" : "Week \(max(day.week, 1))",
-                              tone: workout?.status == "done" ? .ok : workout?.status == "skipped" ? .danger : .accent)
+                    CardHeader(kind: .today, title: s.isTomorrow ? "Tomorrow's session" : "Today's session") {
+                        if s.isTomorrow {
+                            Badge("Today done", tone: .ok)
+                        } else {
+                            Badge(s.status == "done" ? "Done" : s.status == "skipped" ? "Skipped" : s.started ? "In progress" : "Week \(max(s.week, 1))",
+                                  tone: s.status == "done" ? .ok : s.status == "skipped" ? .danger : .accent)
+                        }
                     }
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(t.name).font(Theme.Typography.title).foregroundStyle(Theme.Palette.text)
-                            if let s = t.subtitle { Caption(s) }
+                            Text(s.name).font(Theme.Typography.title).foregroundStyle(Theme.Palette.text)
+                            Caption([s.isTomorrow ? Day.label(s.date) : nil, s.subtitle].compactMap { $0 }.joined(separator: " · "))
                         }
                         Spacer()
                         Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.Palette.muted)
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+/// The latest run: its route drawn as a shape, with distance, time, pace and heart rate.
+private struct LastRunCard: View {
+    let model: HomeModel
+    let wide: Bool
+    let open: (Int) -> Void
+    var body: some View {
+        if let run = model.lastRun {
+            let route = RunRoute(run.track ?? [])
+            Button { open(run.id) } label: {
+                VStack(alignment: .leading, spacing: Theme.Space.s) {
+                    CardHeader(kind: .lastRun) { Text(Day.label(run.day)).font(Theme.Typography.label) }
+                    if wide {
+                        HStack(alignment: .center, spacing: Theme.Space.l) {
+                            numbers(run)
+                            Spacer(minLength: 0)
+                            if !route.isEmpty { RouteSketch(route: route).frame(width: 130, height: 96) }
+                        }
+                    } else {
+                        if !route.isEmpty { RouteSketch(route: route).frame(height: 80).frame(maxWidth: .infinity) }
+                        numbers(run)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func numbers(_ run: GarminActivity) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            BigValue(value: run.distance_m.map { String(format: "%.2f", $0 / 1000) } ?? "–", unit: "km")
+            Caption([run.duration_s.map { Fmt.time($0) }, run.avg_pace_s_per_km.map { Fmt.pace($0) }, run.avg_hr.map { "\(Int($0)) bpm" }].compactMap { $0 }.joined(separator: " · "))
         }
     }
 }

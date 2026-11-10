@@ -218,6 +218,76 @@ struct StatLine: View {
     }
 }
 
+/// A value along the distance of a run (pace, heart rate, elevation): a line with a soft fill, a dashed average,
+/// and a callout that follows the finger.
+struct ProfileChart: View {
+    struct Sample: Identifiable { let x: Double; let y: Double; var id: Double { x } }
+    let samples: [Sample]
+    var color: Color = Theme.Palette.accent
+    /// Flips the axis so that better (lower) values sit higher, for pace.
+    var lowerIsBetter = false
+    var height: CGFloat = 150
+    var average: Double? = nil
+    let format: (Double) -> String
+    @State private var selection: Double?
+
+    private var domain: ClosedRange<Double> {
+        let ys = samples.map(\.y)
+        guard let lo = ys.min(), let hi = ys.max() else { return 0...1 }
+        let pad = max((hi - lo) * 0.12, 0.5)
+        return (lo - pad)...(hi + pad)
+    }
+
+    var body: some View {
+        let picked = selection.flatMap { x in samples.min { abs($0.x - x) < abs($1.x - x) } }
+        Chart {
+            ForEach(samples) { s in
+                if !lowerIsBetter {
+                    AreaMark(x: .value("km", s.x), yStart: .value("Base", domain.lowerBound), yEnd: .value("Value", s.y))
+                        .foregroundStyle(LinearGradient(colors: [color.opacity(Theme.ChartStyle.areaOpacity), color.opacity(0)], startPoint: .top, endPoint: .bottom))
+                        .interpolationMethod(.monotone)
+                }
+                LineMark(x: .value("km", s.x), y: .value("Value", s.y))
+                    .foregroundStyle(color).lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)).interpolationMethod(.monotone)
+            }
+            if let average {
+                RuleMark(y: .value("Average", average)).foregroundStyle(color.opacity(0.55)).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 4]))
+            }
+            if let picked {
+                RuleMark(x: .value("km", picked.x)).foregroundStyle(Theme.Palette.muted.opacity(0.45)).lineStyle(StrokeStyle(lineWidth: 1))
+                    .annotation(position: .top, spacing: Theme.Space.xs, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(String(format: "%.2f km", picked.x)).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+                            Text(format(picked.y)).font(Theme.Typography.callout.weight(.semibold).monospacedDigit())
+                        }
+                        .padding(.horizontal, Theme.Space.s).padding(.vertical, Theme.Space.xs)
+                        .background(Theme.Palette.surfaceRaised, in: RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))
+                    }
+                PointMark(x: .value("km", picked.x), y: .value("Value", picked.y)).symbolSize(70).foregroundStyle(color)
+            }
+        }
+        .modifier(YScale(domain: domain, reversed: lowerIsBetter))
+        .chartYAxis {
+            AxisMarks(position: .trailing, values: .automatic(desiredCount: 4)) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Theme.Palette.separator.opacity(Theme.ChartStyle.gridOpacity))
+                AxisValueLabel { if let v = value.as(Double.self) { Text(format(v)).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted) } }
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                AxisValueLabel { if let v = value.as(Double.self) { Text("\(ChartLabel.km(v)) km").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted) } }
+            }
+        }
+        .chartXSelection(value: $selection)
+        .frame(height: height)
+    }
+}
+
+/// Number formatting the design system needs on its own (the app's `Fmt` is not part of the widget extension).
+enum ChartLabel {
+    static func km(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v) }
+}
+
 /// Tiny axis-free chart for dashboard cards: bars or a filled line, with gaps where a day has no value.
 struct Spark: View {
     enum Style { case bars, line }

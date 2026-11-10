@@ -3,11 +3,12 @@ import SwiftUI
 
 /// The cards the dashboard can show. The raw value is what is saved in the layout, so do not rename a case.
 enum CardKind: String, CaseIterable, Codable {
-    case today, steps, restingHR, sleep, hrv, bodyBattery, week, weight, bodyFat, leanMass, nutrition, stress, calories, intensity, floors, distance, sleepScore, respiration, spo2, facts, all
+    case today, lastRun, steps, restingHR, sleep, hrv, bodyBattery, week, weight, bodyFat, leanMass, nutrition, stress, calories, intensity, floors, distance, sleepScore, respiration, spo2, facts, all
 
     var title: String {
         switch self {
-        case .today: "Today's session"
+        case .today: "Next session"
+        case .lastRun: "Last run"
         case .week: "This week"
         case .weight: "Weight"
         case .nutrition: "Nutrition"
@@ -22,6 +23,7 @@ enum CardKind: String, CaseIterable, Codable {
     var icon: String {
         switch self {
         case .today: "calendar"
+        case .lastRun: "figure.run"
         case .week: "checkmark.circle"
         case .weight: "scalemass"
         case .nutrition: "fork.knife"
@@ -36,6 +38,7 @@ enum CardKind: String, CaseIterable, Codable {
     var tint: Color {
         switch self {
         case .today, .week: Theme.Palette.accent
+        case .lastRun: Theme.Palette.run
         case .weight: Theme.Palette.calm
         case .nutrition: Theme.Palette.ok
         case .sleep: Theme.Palette.sleep
@@ -50,7 +53,7 @@ enum CardKind: String, CaseIterable, Codable {
     var alwaysWide: Bool { self == .facts || self == .all }
 
     /// Cards with a chart over time, whose range of days can be chosen.
-    var hasRange: Bool { ![.today, .week, .facts, .all].contains(self) }
+    var hasRange: Bool { ![.today, .lastRun, .week, .facts, .all].contains(self) }
 }
 
 /// The ranges a widget's chart can cover.
@@ -144,7 +147,7 @@ struct CardSetting: Codable, Identifiable, Hashable {
     var id: String { kind.rawValue }
 
     static let defaults: [CardSetting] = [
-        .init(kind: .today, wide: true), .init(kind: .steps, wide: false), .init(kind: .restingHR, wide: false),
+        .init(kind: .today, wide: true), .init(kind: .lastRun, wide: true), .init(kind: .steps, wide: false), .init(kind: .restingHR, wide: false),
         .init(kind: .sleep, wide: true), .init(kind: .hrv, wide: false), .init(kind: .bodyBattery, wide: false),
         .init(kind: .week, wide: true), .init(kind: .weight, wide: false), .init(kind: .nutrition, wide: false),
         .init(kind: .bodyFat, wide: false), .init(kind: .leanMass, wide: false),
@@ -160,6 +163,10 @@ struct CardSetting: Codable, Identifiable, Hashable {
 final class HomeModel {
     private(set) var days: [String: [String: MetricDay.Value]] = [:]
     private(set) var dash: Dashboard?
+    /// Tomorrow's planned session, shown once today's is done.
+    private(set) var tomorrow: ScheduleDay?
+    /// The most recent run from the watch, with its track.
+    private(set) var lastRun: GarminActivity?
     private(set) var error: String?
     private(set) var loaded = false
     private(set) var syncing = false
@@ -172,7 +179,13 @@ final class HomeModel {
         // Cards added in a later version join a saved layout, before the two lists that close it.
         let added = CardSetting.defaults.filter { d in !saved.contains { $0.kind == d.kind } }
         let tail = saved.filter { $0.kind.alwaysWide }, head = saved.filter { !$0.kind.alwaysWide }
-        layout = saved.isEmpty ? added : head + added + tail
+        var merged = saved.isEmpty ? added : head + added + tail
+        // The run widget belongs near the top, next to the session.
+        if !saved.isEmpty, !saved.contains(where: { $0.kind == .lastRun }), let run = merged.firstIndex(where: { $0.kind == .lastRun }) {
+            let card = merged.remove(at: run)
+            merged.insert(card, at: min(merged.count, (merged.firstIndex { $0.kind == .today } ?? -1) + 1))
+        }
+        layout = merged
     }
 
     func load() async {
@@ -182,6 +195,24 @@ final class HomeModel {
         if let m = try? await metrics { days = Dictionary(m.days.map { ($0.date, $0.data) }, uniquingKeysWith: { _, b in b }) }
         do { dash = try await dashboard; error = nil } catch { self.error = error.localizedDescription }
         loaded = true
+        // Extras for single widgets. Each is optional: a widget without its data just stays off the dashboard.
+        let next = Day.add(today, 1)
+        if let s: Schedule = try? await API.shared.get("/api/schedule?from=\(next)&to=\(next)", cache: true) { tomorrow = s.days.first }
+        if let all: [GarminActivity] = try? await API.shared.get("/api/activities", cache: true),
+           let latest = all.first(where: { $0.isRun && ($0.distance_m ?? 0) > 0 }),
+           latest.id != lastRun?.id || lastRun?.track == nil {
+            lastRun = (try? await API.shared.get("/api/activities/\(latest.id)", cache: true)) ?? latest
+        }
+    }
+
+    /// The session to show on the dashboard: today's until it is done, then tomorrow's.
+    var nextSession: (date: String, name: String, subtitle: String?, kind: String, isTomorrow: Bool, status: String?, started: Bool, week: Int)? {
+        guard let day = dash?.today else { return nil }
+        let workout = dash?.workouts.first { $0.date == day.date && $0.template_key == day.templateKey }
+        if workout?.status == "done", let t = tomorrow {
+            return (t.date, t.name, t.subtitle, t.kind, true, t.main?.status, false, t.week)
+        }
+        return (day.date, day.template.name, day.template.subtitle, day.template.kind, false, workout?.status, workout?.started_at != nil, day.week)
     }
 
     /// Asks the server to pull from Garmin now, then reloads.
@@ -258,9 +289,9 @@ final class HomeModel {
         if let days { ensureHistory(days) }
     }
 
-    /// Gives every widget that has a chart the same range.
-    func applyRangeToAll(_ days: Int) {
-        for i in layout.indices where layout[i].kind.hasRange { layout[i].range = days }
+    /// Gives every widget that has a chart the same range and resolution.
+    func applyToAll(range days: Int, every: Int) {
+        for i in layout.indices where layout[i].kind.hasRange { layout[i].range = days; layout[i].resolution = every }
         ensureHistory(days)
     }
 
@@ -287,6 +318,7 @@ final class HomeModel {
     func hasData(_ kind: CardKind) -> Bool {
         switch kind {
         case .today: dash?.today != nil
+        case .lastRun: lastRun != nil
         case .week: dash != nil
         case .weight: dash?.body.contains { $0.weight_kg != nil } ?? false
         case .nutrition: !(dash?.nutrition.isEmpty ?? true)

@@ -273,7 +273,8 @@ struct ScheduleDay: Decodable, Identifiable, Hashable {
 struct GarminActivity: Decodable, Identifiable, Hashable {
     struct Split: Decodable, Hashable { let km: Flex?; let index: Flex?; let seconds: Double?; let duration_s: Double?; let pace_s_per_km: Double?; let avg_hr: Double?; let distance_m: Double?; let partial: Bool? }
     struct Zones: Decodable, Hashable { let max_hr_used: Double?; let seconds: [Double]? }
-    struct Point: Decodable, Hashable { let d: Double?; let hr: Double? }
+    /// One sample of the track: seconds from the start, km covered, heart rate, pace (s/km), altitude and position.
+    struct Point: Decodable, Hashable { let t: Double?; let d: Double?; let hr: Double?; let pace: Double?; let alt: Double?; let lat: Double?; let lon: Double? }
     let id: Int
     let workout_id: Int?
     let start_time: String?
@@ -288,10 +289,16 @@ struct GarminActivity: Decodable, Identifiable, Hashable {
     let best_5k_s: Double?
     let calories: Double?
     let elevation_gain_m: Double?
+    var avg_cadence: Double? = nil
+    var best_1k_s: Double? = nil
     let splits: [Split]?
     let laps: [Split]?
     let hr_zones: Zones?
     let track: [Point]?
+
+    var isRun: Bool { (sport ?? "").lowercased().contains("run") || sport == nil }
+    /// The calendar day of the activity.
+    var day: String { date ?? String((start_time ?? "").prefix(10)) }
 }
 
 struct Upload: Decodable, Identifiable, Hashable {

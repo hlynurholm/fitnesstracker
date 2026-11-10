@@ -132,7 +132,7 @@ export function summarizeActivity(records, laps = [], meta = {}, opts = {}) {
   }
   const best1k = best(1000), best5k = best(5000);
 
-  // Downsampled track for charts (max ~240 points).
+  // Downsampled track for charts and the route map (max ~240 points).
   const track = [];
   if (recs.length > 1) {
     const step = Math.max(1, Math.ceil(recs.length / 240));
@@ -146,6 +146,10 @@ export function summarizeActivity(records, laps = [], meta = {}, opts = {}) {
         hr: finite(r.hr) ? r.hr : null,
         pace: dd > 5 && dt > 0 ? Math.round(dt / (dd / 1000)) : null,
         alt: finite(r.alt) ? Math.round(r.alt * 10) / 10 : null,
+        // Position, for drawing the route. Always present (null without GPS), which is how a track is told apart
+        // from the ones stored before routes were kept.
+        lat: finite(r.lat) && finite(r.lon) ? Math.round(r.lat * 1e5) / 1e5 : null,
+        lon: finite(r.lat) && finite(r.lon) ? Math.round(r.lon * 1e5) / 1e5 : null,
       });
     }
   }

@@ -112,7 +112,7 @@ All routes need the session cookie or `Authorization: Bearer <API_TOKEN>`.
 | `GET/PUT /api/tests` | Performance tests (5 km, jumps, shuttle, 3RMs) |
 | `POST /api/uploads` (multipart `file`, optional `workout_id`, `date`, `source`, `tz_offset_min`) | Garmin or MyFitnessPal files |
 | `GET /api/uploads`, `GET /api/uploads/:id/raw`, `PATCH`, `DELETE` | Manage uploads |
-| `GET /api/activities`, `GET /api/activities/:id` | Parsed Garmin activities, with splits, laps, HR zones and a downsampled track |
+| `GET /api/activities`, `GET /api/activities/:id` | Parsed Garmin activities, with splits, laps, HR zones and a downsampled track (with `lat`/`lon` for the route) |
 | `GET /api/nutrition` | Daily nutrition totals |
 | `GET /api/dashboard` | Everything the Progress page needs |
 | `GET /api/export.json[?include=raw]` | Full export, optionally with the original files as base64 |

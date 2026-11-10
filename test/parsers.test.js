@@ -185,3 +185,14 @@ test("typed numbers accept a comma as the decimal separator", async () => {
   assert.equal(toNum("abc"), null);
   assert.equal(toNum(null), null);
 });
+
+test("the track keeps positions for the route, and marks their absence", async () => {
+  const { summarizeActivity } = await import("../src/parsers/activity.js");
+  const recs = Array.from({ length: 20 }, (_, i) => ({ t: i * 5000, dist: i * 15, hr: 140, lat: 64.1 + i * 0.0001234567, lon: -21.9 - i * 0.0002 }));
+  const withGps = summarizeActivity(recs).track;
+  assert.equal(withGps[3].lat, 64.10037);
+  assert.equal(withGps[3].lon, -21.9006);
+  const noGps = summarizeActivity(recs.map(({ lat, lon, ...r }) => r)).track;
+  assert.equal("lat" in noGps[0], true, "the key is there so the track is not read again");
+  assert.equal(noGps[0].lat, null);
+});

@@ -134,63 +134,14 @@ struct HeartRateZones: View {
     }
 }
 
-/// Parsed Garmin activity: totals, heart rate over distance, splits and time in zones.
+/// The run page in a sheet, for places that are not inside a navigation stack of their own.
 struct ActivitySheet: View {
     let id: Int
-    @State private var activity: GarminActivity?
-    @State private var error: String?
     @Environment(\.dismiss) private var dismiss
-
     var body: some View {
         NavigationStack {
-            Screen {
-                if let a = activity {
-                    TileGrid {
-                        Tile(label: "Distance", value: a.distance_m.map { String(format: "%.2f km", $0 / 1000) } ?? "–")
-                        Tile(label: "Time", value: Fmt.time(a.duration_s))
-                        Tile(label: "Pace", value: Fmt.pace(a.avg_pace_s_per_km))
-                        Tile(label: "Avg HR", value: a.avg_hr.map { "\(Int($0))" } ?? "–", detail: a.max_hr.map { "max \(Int($0))" })
-                    }
-                    let track = (a.track ?? []).filter { $0.d != nil && $0.hr != nil }
-                    if track.count > 5 {
-                        Chart(Array(track.enumerated()), id: \.offset) { _, p in
-                            LineMark(x: .value("km", p.d!), y: .value("Heart rate", p.hr!)).foregroundStyle(Theme.Palette.danger)
-                        }
-                        .chartYScale(domain: .automatic(includesZero: false))
-                        .frame(height: 180).card()
-                    }
-                    let splits = (a.splits ?? []).isEmpty ? (a.laps ?? []) : a.splits!
-                    if !splits.isEmpty {
-                        Grid(alignment: .trailing, horizontalSpacing: Theme.Space.l, verticalSpacing: Theme.Space.s) {
-                            GridRow { Text("km").gridColumnAlignment(.leading); Text("time"); Text("pace"); Text("HR") }.font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
-                            ForEach(Array(splits.enumerated()), id: \.offset) { _, s in
-                                GridRow {
-                                    Text((s.km ?? s.index)?.text ?? "")
-                                    Text(Fmt.time(s.seconds ?? s.duration_s))
-                                    Text(Fmt.pace(s.pace_s_per_km))
-                                    Text(s.avg_hr.map { "\(Int($0))" } ?? "")
-                                }
-                                .font(Theme.Typography.callout.monospacedDigit())
-                            }
-                        }
-                        .card()
-                    }
-                    if let z = a.hr_zones?.seconds {
-                        Text("Time in zones: " + z.enumerated().map { "Z\($0 + 1) \(Fmt.time($1))" }.joined(separator: " · ")).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
-                    }
-                } else if let error {
-                    ErrorCard(message: error) { await load() }
-                } else {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
-                }
-            }
-            .navigationTitle("Garmin activity").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Close") { dismiss() } } }
-            .task { await load() }
+            RunScreen(id: id)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Close") { dismiss() } } }
         }
-    }
-
-    private func load() async {
-        do { activity = try await API.shared.get("/api/activities/\(id)"); error = nil } catch { self.error = error.localizedDescription }
     }
 }

@@ -272,7 +272,8 @@ struct ScheduleDay: Decodable, Identifiable, Hashable {
 
 struct GarminActivity: Decodable, Identifiable, Hashable {
     struct Split: Decodable, Hashable { let km: Flex?; let index: Flex?; let seconds: Double?; let duration_s: Double?; let pace_s_per_km: Double?; let avg_hr: Double?; let distance_m: Double?; let partial: Bool? }
-    struct Zones: Decodable, Hashable { let max_hr_used: Double?; let seconds: [Double]? }
+    /// `edges` is the heart rate each zone starts at, zone 1 first.
+    struct Zones: Decodable, Hashable { let max_hr_used: Double?; let edges: [Double]?; let seconds: [Double]? }
     /// One sample of the track: seconds from the start, km covered, heart rate, pace (s/km), altitude and position.
     struct Point: Decodable, Hashable { let t: Double?; let d: Double?; let hr: Double?; let pace: Double?; let alt: Double?; let lat: Double?; let lon: Double? }
     let id: Int

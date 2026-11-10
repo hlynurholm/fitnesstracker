@@ -228,8 +228,22 @@ struct ProfileChart: View {
     var lowerIsBetter = false
     var height: CGFloat = 150
     var average: Double? = nil
+    /// Colours the line by value instead of with `color`: each band starts at `from` and runs up to the next one,
+    /// lowest first. For heart rate zones. Not for `lowerIsBetter` charts.
+    var bands: [(from: Double, color: Color)] = []
     let format: (Double) -> String
     @State private var selection: Double?
+
+    /// The bands as a bottom-to-top gradient with hard edges, laid over the plot area.
+    private func banded(opacity: Double) -> LinearGradient {
+        let span = domain.upperBound - domain.lowerBound
+        let place = { (v: Double) in min(max((v - domain.lowerBound) / span, 0), 1) }
+        let stops = bands.indices.flatMap { i in
+            [Gradient.Stop(color: bands[i].color.opacity(opacity), location: i == 0 ? 0 : place(bands[i].from)),
+             Gradient.Stop(color: bands[i].color.opacity(opacity), location: i == bands.count - 1 ? 1 : place(bands[i + 1].from))]
+        }
+        return LinearGradient(stops: stops, startPoint: .bottom, endPoint: .top)
+    }
 
     private var domain: ClosedRange<Double> {
         let ys = samples.map(\.y)
@@ -242,13 +256,22 @@ struct ProfileChart: View {
         let picked = selection.flatMap { x in samples.min { abs($0.x - x) < abs($1.x - x) } }
         Chart {
             ForEach(samples) { s in
-                if !lowerIsBetter {
+                if !bands.isEmpty {
                     AreaMark(x: .value("km", s.x), yStart: .value("Base", domain.lowerBound), yEnd: .value("Value", s.y))
-                        .foregroundStyle(LinearGradient(colors: [color.opacity(Theme.ChartStyle.areaOpacity), color.opacity(0)], startPoint: .top, endPoint: .bottom))
+                        .foregroundStyle(banded(opacity: Theme.ChartStyle.areaOpacity * 0.6)).alignsMarkStylesWithPlotArea()
                         .interpolationMethod(.monotone)
+                    LineMark(x: .value("km", s.x), y: .value("Value", s.y))
+                        .foregroundStyle(banded(opacity: 1)).alignsMarkStylesWithPlotArea()
+                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)).interpolationMethod(.monotone)
+                } else {
+                    if !lowerIsBetter {
+                        AreaMark(x: .value("km", s.x), yStart: .value("Base", domain.lowerBound), yEnd: .value("Value", s.y))
+                            .foregroundStyle(LinearGradient(colors: [color.opacity(Theme.ChartStyle.areaOpacity), color.opacity(0)], startPoint: .top, endPoint: .bottom))
+                            .interpolationMethod(.monotone)
+                    }
+                    LineMark(x: .value("km", s.x), y: .value("Value", s.y))
+                        .foregroundStyle(color).lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)).interpolationMethod(.monotone)
                 }
-                LineMark(x: .value("km", s.x), y: .value("Value", s.y))
-                    .foregroundStyle(color).lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)).interpolationMethod(.monotone)
             }
             if let average {
                 RuleMark(y: .value("Average", average)).foregroundStyle(color.opacity(0.55)).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 4]))

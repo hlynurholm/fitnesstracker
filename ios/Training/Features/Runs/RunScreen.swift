@@ -164,8 +164,22 @@ struct RunScreen: View {
         }
         let hr = zip(km, track).compactMap { d, p in p.hr.map { ProfileChart.Sample(x: d, y: $0) } }
         if hr.count > 5 {
+            // Coloured by zone when the activity says where the zones start.
+            let bands = Array(zip(a.hr_zones?.edges ?? [], Self.zoneColors)).map { (from: $0.0, color: $0.1) }
             chartCard("Heart rate", note: a.avg_hr.map { "average \(Int($0)) bpm" }) {
-                ProfileChart(samples: hr, color: Theme.Palette.heart, average: a.avg_hr) { "\(Int($0.rounded()))" }
+                ProfileChart(samples: hr, color: Theme.Palette.heart, average: a.avg_hr, bands: bands) { "\(Int($0.rounded()))" }
+                if !bands.isEmpty {
+                    HStack(spacing: Theme.Space.m) {
+                        ForEach(Array(bands.enumerated()), id: \.offset) { i, band in
+                            HStack(spacing: 3) {
+                                Circle().fill(band.color).frame(width: 6, height: 6)
+                                Text("Z\(i + 1) \(Int(band.from))+").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                }
             }
         }
         let alt = zip(km, track).compactMap { d, p in p.alt.map { ProfileChart.Sample(x: d, y: $0) } }
@@ -175,6 +189,9 @@ struct RunScreen: View {
             }
         }
     }
+
+    /// Heart rate zones 1 to 5, the same in the chart and in the bar.
+    private static let zoneColors = [Theme.Palette.rest, Theme.Palette.calm, Theme.Palette.ok, Theme.Palette.energy, Theme.Palette.heart]
 
     private func chartCard(_ title: String, note: String?, @ViewBuilder chart: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -214,8 +231,7 @@ struct RunScreen: View {
     @ViewBuilder
     private func zones(_ a: GarminActivity) -> some View {
         if let seconds = a.hr_zones?.seconds, seconds.reduce(0, +) > 0 {
-            let colors = [Theme.Palette.rest, Theme.Palette.calm, Theme.Palette.ok, Theme.Palette.energy, Theme.Palette.heart]
-            let parts = Array(zip(seconds, colors).prefix(5))
+            let parts = Array(zip(seconds, Self.zoneColors))
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 CardTitle("Time in heart rate zones", note: a.hr_zones?.max_hr_used.map { "max \(Int($0))" })
                 SegmentBar(parts: parts.map { ($0.0, $0.1) }, height: 12)

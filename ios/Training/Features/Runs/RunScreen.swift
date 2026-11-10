@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The GPS route of a run, with how hard each part was run relative to the rest of it.
 struct RunRoute {
-    struct Point { let coordinate: CLLocationCoordinate2D; let effort: Double } // effort: 0 slowest part, 1 fastest
+    /// effort: 0 slowest part, 1 fastest. The rest is what the watch read there (pace is the smoothed one).
+    struct Point { let coordinate: CLLocationCoordinate2D; let effort: Double; let km: Double; let seconds: Double?; let pace: Double?; let hr: Double?; let alt: Double? }
     let points: [Point]
     var isEmpty: Bool { points.count < 2 }
 
@@ -15,8 +16,14 @@ struct RunRoute {
         let fast = sorted.isEmpty ? 0 : sorted[sorted.count / 10], slow = sorted.isEmpty ? 1 : sorted[min(sorted.count - 1, sorted.count * 9 / 10)]
         points = zip(gps, paces).map { p, pace in
             let effort = pace.map { slow > fast ? min(max((slow - $0) / (slow - fast), 0), 1) : 0.5 } ?? 0.5
-            return Point(coordinate: .init(latitude: p.lat!, longitude: p.lon!), effort: effort)
+            return Point(coordinate: .init(latitude: p.lat!, longitude: p.lon!), effort: effort, km: p.d ?? 0, seconds: p.t, pace: pace, hr: p.hr, alt: p.alt)
         }
+    }
+
+    /// Where each whole kilometre was reached.
+    var kilometres: [(km: Int, coordinate: CLLocationCoordinate2D)] {
+        guard let total = points.last?.km, total >= 1 else { return [] }
+        return (1...Int(total)).compactMap { k in points.first { $0.km >= Double(k) }.map { (k, $0.coordinate) } }
     }
 
     /// Moving average over the samples within `reach` on each side, skipping gaps.
@@ -88,7 +95,7 @@ struct RunScreen: View {
             if let a = activity {
                 let track = a.track ?? []
                 let route = RunRoute(track)
-                if !route.isEmpty { map(route) }
+                if !route.isEmpty { RouteMap(route: route, activity: a) }
                 headline(a)
                 tiles(a)
                 profiles(a, track)
@@ -113,36 +120,6 @@ struct RunScreen: View {
     }
 
     // MARK: Sections
-
-    private func map(_ route: RunRoute) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Space.s) {
-            Map(initialPosition: .region(route.region), interactionModes: [.pan, .zoom]) {
-                // A light casing under the coloured line keeps the route readable on any map.
-                MapPolyline(coordinates: route.points.map(\.coordinate))
-                    .stroke(.white.opacity(0.95), style: StrokeStyle(lineWidth: 9, lineCap: .round, lineJoin: .round))
-                ForEach(Array(route.pieces.enumerated()), id: \.offset) { _, piece in
-                    MapPolyline(coordinates: piece.coordinates).stroke(piece.color, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
-                }
-                Annotation("Start", coordinate: route.points[0].coordinate, anchor: .center) {
-                    Circle().fill(Theme.Palette.surface).frame(width: 14, height: 14).overlay(Circle().stroke(Theme.Palette.ok, lineWidth: 4))
-                }
-                Annotation("Finish", coordinate: route.points[route.points.count - 1].coordinate, anchor: .center) {
-                    Image(systemName: "flag.checkered").font(.caption2.weight(.bold)).foregroundStyle(.white)
-                        .frame(width: 22, height: 22).background(Theme.Palette.text.opacity(0.85), in: Circle())
-                }
-            }
-            .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
-            .frame(height: 320)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-            HStack(spacing: Theme.Space.s) {
-                Text("slower").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
-                LinearGradient(colors: stride(from: 0.0, through: 1.0, by: 0.25).map { Theme.Palette.effort($0) }, startPoint: .leading, endPoint: .trailing)
-                    .frame(height: 5).clipShape(Capsule())
-                Text("faster").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
-            }
-            .padding(.horizontal, Theme.Space.xs)
-        }
-    }
 
     private func headline(_ a: GarminActivity) -> some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -250,5 +227,127 @@ struct RunScreen: View {
             }
             .card()
         }
+    }
+}
+
+/// The route on a map with the run's numbers on it: a marker at every kilometre, the totals along the top, and a
+/// point that moves along the route (drag the strip, or tap the route) to read pace, heart rate and height there.
+private struct RouteMap: View {
+    let route: RunRoute
+    let activity: GarminActivity
+    @State private var picked: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            MapReader { proxy in
+                Map(initialPosition: .region(route.region), interactionModes: [.pan, .zoom]) {
+                    // A light casing under the coloured line keeps the route readable on any map.
+                    MapPolyline(coordinates: route.points.map(\.coordinate))
+                        .stroke(.white.opacity(0.95), style: StrokeStyle(lineWidth: 9, lineCap: .round, lineJoin: .round))
+                    ForEach(Array(route.pieces.enumerated()), id: \.offset) { _, piece in
+                        MapPolyline(coordinates: piece.coordinates).stroke(piece.color, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+                    }
+                    ForEach(route.kilometres, id: \.km) { mark in
+                        Annotation("", coordinate: mark.coordinate, anchor: .center) {
+                            Text("\(mark.km)").font(Theme.Typography.label.monospacedDigit()).foregroundStyle(Theme.Palette.text)
+                                .frame(width: 20, height: 20).background(Theme.Palette.surface, in: Circle())
+                                .overlay(Circle().stroke(Theme.Palette.text.opacity(0.25), lineWidth: 1))
+                                .accessibilityLabel("Kilometre \(mark.km)")
+                        }
+                    }
+                    Annotation("Start", coordinate: route.points[0].coordinate, anchor: .center) {
+                        Circle().fill(Theme.Palette.surface).frame(width: 14, height: 14).overlay(Circle().stroke(Theme.Palette.ok, lineWidth: 4))
+                    }
+                    Annotation("Finish", coordinate: route.points[route.points.count - 1].coordinate, anchor: .center) {
+                        Image(systemName: "flag.checkered").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                            .frame(width: 22, height: 22).background(Theme.Palette.text.opacity(0.85), in: Circle())
+                    }
+                    if let p = picked.map({ route.points[$0] }) {
+                        Annotation("", coordinate: p.coordinate, anchor: .center) {
+                            Circle().fill(Theme.Palette.effort(p.effort)).frame(width: 18, height: 18)
+                                .overlay(Circle().stroke(.white, lineWidth: 3)).shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+                        }
+                    }
+                }
+                .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
+                .onTapGesture { picked = nearest(to: $0, proxy) } // a tap off the route clears the point
+                .safeAreaInset(edge: .top, spacing: 0) { readout }
+                .safeAreaInset(edge: .bottom, spacing: 0) { strip }
+            }
+            .frame(height: 420)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            HStack(spacing: Theme.Space.s) {
+                Text("slower").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+                LinearGradient(colors: stride(from: 0.0, through: 1.0, by: 0.25).map { Theme.Palette.effort($0) }, startPoint: .leading, endPoint: .trailing)
+                    .frame(height: 5).clipShape(Capsule())
+                Text("faster").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+            }
+            .padding(.horizontal, Theme.Space.xs)
+            Text("Drag along the strip or tap the route to read any point.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).padding(.horizontal, Theme.Space.xs)
+        }
+    }
+
+    /// The route point under a tap, if the tap landed close enough to the line.
+    private func nearest(to location: CGPoint, _ proxy: MapProxy) -> Int? {
+        let hits = route.points.indices.compactMap { i in
+            proxy.convert(route.points[i].coordinate, to: .local).map { (index: i, distance: hypot($0.x - location.x, $0.y - location.y)) }
+        }
+        return hits.min { $0.distance < $1.distance }.flatMap { $0.distance < 36 ? $0.index : nil }
+    }
+
+    /// The totals of the run, or the readings at the picked point.
+    private var readout: some View {
+        let p = picked.map { route.points[$0] }
+        let a = activity
+        let whole = { (v: Double?) in v.map { "\(Int($0.rounded()))" } }
+        let items: [(String, String?)] = p.map { p in
+            [("Distance", String(format: "%.2f km", p.km)), ("Time", p.seconds.map { Fmt.time($0) }), ("Pace", p.pace.map { Fmt.time($0) }),
+             ("Heart", whole(p.hr)), ("Height", whole(p.alt).map { $0 + " m" })]
+        } ?? [("Distance", a.distance_m.map { String(format: "%.2f km", $0 / 1000) }), ("Time", a.duration_s.map { Fmt.time($0) }),
+              ("Avg pace", a.avg_pace_s_per_km.map { Fmt.time($0) }), ("Avg heart", whole(a.avg_hr)), ("Climb", whole(a.elevation_gain_m).map { $0 + " m" })]
+        return HStack(spacing: Theme.Space.xs) {
+            ForEach(items, id: \.0) { label, value in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+                    Text(value ?? "–").font(Theme.Typography.callout.weight(.semibold).monospacedDigit())
+                }
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, Theme.Space.m).padding(.vertical, Theme.Space.s)
+        .background(.regularMaterial)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The run from start to finish as bars: as tall as the ground was high, coloured by pace. Drag across it to move the point.
+    private var strip: some View {
+        Canvas { context, size in
+            let count = min(route.points.count, 80)
+            let alts = route.points.compactMap(\.alt), low = alts.min() ?? 0, high = alts.max() ?? 0
+            let width = size.width / CGFloat(count)
+            for b in 0..<count {
+                let part = route.points[(b * route.points.count / count)..<max((b + 1) * route.points.count / count, b * route.points.count / count + 1)]
+                let partAlts = part.compactMap(\.alt)
+                let level = high - low >= 3 && !partAlts.isEmpty ? (partAlts.reduce(0, +) / Double(partAlts.count) - low) / (high - low) : 0.5
+                let height = size.height * (0.3 + 0.7 * level)
+                let bar = CGRect(x: CGFloat(b) * width + 0.75, y: size.height - height, width: max(width - 1.5, 1), height: height)
+                let passed = picked.map { part.startIndex <= $0 } ?? true
+                context.fill(Path(roundedRect: bar, cornerRadius: 1.5), with: .color(Theme.Palette.effort(part.map(\.effort).reduce(0, +) / Double(part.count)).opacity(passed ? 1 : 0.3)))
+            }
+        }
+        .frame(height: 36)
+        .padding(.horizontal, Theme.Space.m).padding(.vertical, Theme.Space.s)
+        .background(.regularMaterial)
+        .contentShape(Rectangle())
+        .overlay {
+            GeometryReader { geo in
+                Color.clear.contentShape(Rectangle()).gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                    let fraction = min(max((drag.location.x - Theme.Space.m) / max(geo.size.width - Theme.Space.m * 2, 1), 0), 1)
+                    picked = Int((fraction * Double(route.points.count - 1)).rounded())
+                })
+            }
+        }
+        .accessibilityLabel("Scrub along the run")
     }
 }

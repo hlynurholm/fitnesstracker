@@ -132,13 +132,19 @@ struct Screen<Content: View>: View {
     /// drawn here in the heading typeface, so every tab's title looks the same and no empty bar sits above it.
     /// Screens that are pushed (and need the back button) leave it nil and set an inline `navigationTitle`.
     var title: String? = nil
+    /// Controls on the same line as the heading, at its right end.
+    var accessory: AnyView? = nil
     @ViewBuilder var content: Content
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: Theme.Space.m) {
                 if let title {
-                    Text(title).font(Theme.Typography.screenTitle).lineLimit(1).minimumScaleFactor(0.7)
-                        .padding(.horizontal, Theme.Space.xs).padding(.top, Theme.Space.s).accessibilityAddTraits(.isHeader)
+                    HStack(alignment: .center, spacing: Theme.Space.s) {
+                        Text(title).font(Theme.Typography.screenTitle).lineLimit(1).minimumScaleFactor(0.6).accessibilityAddTraits(.isHeader)
+                        Spacer(minLength: 0)
+                        accessory
+                    }
+                    .padding(.leading, Theme.Space.xs).padding(.top, Theme.Space.s)
                 }
                 content
             }

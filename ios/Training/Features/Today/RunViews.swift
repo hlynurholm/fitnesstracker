@@ -29,7 +29,7 @@ struct RunBody: View {
                 }
             } else {
                 // Once the watch's recording is in, what was planned gives way to what was done.
-                ForEach(recorded) { RunSummary(id: $0.id) }
+                ForEach(recorded) { RunSummary(id: $0.id, opens: false) }
                 if let d = t.detail { Text("Planned: \(d)").font(Theme.Typography.caption).muted() }
             }
             HStack(spacing: Theme.Space.s) {
@@ -38,7 +38,8 @@ struct RunBody: View {
                 LabeledField(label: "Avg HR") { TextField("bpm", text: $hr).keyboardType(.numberPad) }
             }
             if let km = Fmt.parse(distance), km > 0, let s = Fmt.parseTime(time) { Text("Pace \(Fmt.pace(s / km))").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
-            garmin
+            // With the watch's recording in, the corner opens the run. More files are attached from the run's own page.
+            if recorded.isEmpty { garmin } else { HStack { Spacer(minLength: 0); ForEach(recorded) { OpenRunButton(id: $0.id) } } }
         }
         .onAppear {
             distance = Fmt.number(model.workout?.distance_km); time = Fmt.time(model.workout?.time_sec); hr = Fmt.number(model.workout?.avg_hr)
@@ -90,8 +91,7 @@ struct RunBody: View {
     private var garmin: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             SectionTitle("Garmin")
-            // The recorded runs themselves are cards at the top of the day.
-            Button((model.workout?.activities ?? []).isEmpty ? "Attach the Garmin file for this run" : "Attach another file") { importing = true }.font(Theme.Typography.callout)
+            Button("Attach the Garmin file for this run") { importing = true }.font(Theme.Typography.callout)
             Text("FIT, TCX, GPX or CSV").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
         }
     }

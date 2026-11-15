@@ -47,23 +47,13 @@ private struct DayContent: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Screen(title: isRoot ? (selected == Day.today() ? "Today" : Day.label(selected)) : nil) {
+        Screen(title: isRoot ? (selected == Day.today() ? "Today" : Day.label(selected)) : nil, accessory: AnyView(tools)) {
             if let day = model.day {
                 // The week strip keeps its identity across days, so it never redraws from scratch.
                 WeekStrip(week: model.data?.week ?? [], selected: selected, go: go)
-                // Getting around, kept in the page instead of in the bar at the top: the month, back to today, and a
-                // day back or forward.
+                // Getting around, kept in the page instead of in the bar at the top: back to today, and a day back or
+                // forward.
                 HStack(spacing: Theme.Space.s) {
-                    Button { withAnimation(.snappy) { showCalendar.toggle() } } label: {
-                        Label(showCalendar ? "Close" : "Calendar", systemImage: showCalendar ? "chevron.up" : "calendar").font(Theme.Typography.label)
-                            .padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
-                    }
-                    // Fetches from Garmin now, instead of waiting for the server's half-hourly check.
-                    Button { Task { await sync() } } label: {
-                        Label(syncing ? "Syncing" : "Sync", systemImage: "arrow.triangle.2.circlepath").font(Theme.Typography.label)
-                            .padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
-                    }
-                    .disabled(syncing).accessibilityHint("Fetches new workouts from Garmin")
                     Spacer(minLength: 0)
                     if selected != Day.today() {
                         Button { go(Day.today()) } label: { Text("Today").font(Theme.Typography.label).padding(.horizontal, Theme.Space.m).frame(height: 36).glass() }
@@ -216,6 +206,22 @@ private struct DayContent: View {
             }
         }
         .card()
+    }
+
+    /// Beside the heading: the month, and a fetch from Garmin now instead of waiting for the server's half-hourly check.
+    private var tools: some View {
+        HStack(spacing: Theme.Space.s) {
+            Button { withAnimation(.snappy) { showCalendar.toggle() } } label: {
+                Label(showCalendar ? "Close" : "Calendar", systemImage: showCalendar ? "chevron.up" : "calendar").font(Theme.Typography.label)
+                    .padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
+            }
+            Button { Task { await sync() } } label: {
+                Label(syncing ? "Syncing" : "Sync", systemImage: "arrow.triangle.2.circlepath").font(Theme.Typography.label)
+                    .padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
+            }
+            .disabled(syncing).accessibilityHint("Fetches new workouts from Garmin")
+        }
+        .buttonStyle(.plain).foregroundStyle(Theme.Palette.text).fixedSize()
     }
 
     private func sync() async {

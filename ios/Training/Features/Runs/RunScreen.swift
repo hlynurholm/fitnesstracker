@@ -107,6 +107,8 @@ struct RunScreen: View {
 /// numbers, and the way in to the whole run.
 struct RunSummary: View {
     let id: Int
+    /// Its own Open run button, in the bottom right corner. Off where the surrounding card places the button itself.
+    var opens = true
     @State private var activity: GarminActivity?
 
     var body: some View {
@@ -116,16 +118,24 @@ struct RunSummary: View {
                 if !route.isEmpty { RouteMap(route: route, activity: a, fixed: true, panels: false, height: 220) }
                 StatRow(items: [("Distance", a.distance_m.map { String(format: "%.2f km", $0 / 1000) } ?? "–"), ("Time", a.duration_s.map { Fmt.time($0) } ?? "–"),
                                 ("Pace", a.avg_pace_s_per_km.map { Fmt.time($0) } ?? "–"), ("Heart", a.avg_hr.map { "\(Int($0))" } ?? "–")])
-                NavigationLink { RunScreen(id: id) } label: {
-                    Text("Open run").font(Theme.Typography.label).foregroundStyle(Theme.Palette.text).padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Charts, splits and heart rate zones")
+                if opens { HStack { Spacer(minLength: 0); OpenRunButton(id: id) } }
             } else {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Space.xl)
             }
         }
         .task(id: id) { activity = try? await API.shared.get("/api/activities/\(id)", cache: true) }
+    }
+}
+
+/// The way from a run in brief to its page.
+struct OpenRunButton: View {
+    let id: Int
+    var body: some View {
+        NavigationLink { RunScreen(id: id) } label: {
+            Text("Open run").font(Theme.Typography.label).foregroundStyle(Theme.Palette.text).padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Map, charts, splits and heart rate zones")
     }
 }
 
@@ -136,6 +146,8 @@ struct RunDetail: View {
     var loaded: (GarminActivity) -> Void = { _ in }
     @State private var activity: GarminActivity?
     @State private var error: String?
+    @State private var importing = false
+    @State private var attached: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -151,6 +163,15 @@ struct RunDetail: View {
                 if route.isEmpty, !track.isEmpty {
                     Text("No GPS positions in this recording, so there is no route to draw.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).padding(.horizontal, Theme.Space.xs)
                 }
+                // Another file for the same session, such as a second recording of it.
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    Button("Attach another file") { importing = true }.font(Theme.Typography.callout)
+                    Text(attached ?? "FIT, TCX, GPX or CSV, filed under \(Day.label(a.day)).").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+                }
+                .padding(.horizontal, Theme.Space.xs)
+                .fileImporter(isPresented: $importing, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
+                    if case .success(let urls) = result { Task { await attach(urls, to: a) } }
+                }
             } else if let error {
                 ErrorCard(message: error) { await load() }
             } else {
@@ -158,6 +179,16 @@ struct RunDetail: View {
             }
         }
         .task(id: id) { await load() }
+    }
+
+    private func attach(_ urls: [URL], to a: GarminActivity) async {
+        var fields = ["date": a.day, "source": "garmin", "tz_offset_min": String(-TimeZone.current.secondsFromGMT() / 60)]
+        if let workout = a.workout_id { fields["workout_id"] = String(workout) }
+        do {
+            let r = try await API.shared.upload(files: urls, fields: fields)
+            let failed = r.uploads.first { $0.status == "failed" }
+            attached = failed.map { "Stored, but could not parse: \($0.error ?? "")" } ?? "Attached. It shows on \(Day.label(a.day))."
+        } catch { attached = error.localizedDescription }
     }
 
     private func load() async {
@@ -380,10 +411,6 @@ struct RouteMap: View {
             .contextMenu { if menu { options } }
             .onAppear { choice = MapChoice.load(for: activity.id) }
             .onChange(of: threeD, initial: true) { withAnimation { position = camera } }
-            if height != nil, panels {
-                Text("Drag the strip or tap the route to read a point. Touch and hold the map for the graph and map options.")
-                    .font(Theme.Typography.caption).muted().padding(.horizontal, Theme.Space.xs)
-            }
         }
     }
 

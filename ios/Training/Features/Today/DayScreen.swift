@@ -41,6 +41,7 @@ private struct DayContent: View {
     let go: (String) -> Void
     @State private var showChange = false
     @State private var showCalendar = false
+    @State private var openRun: Int?
     @State private var syncing = false
     /// Eight weeks either side of the week on screen, for the strip that scrolls. (The server gives 120 days at most.)
     @State private var schedule: [ScheduleDay] = []
@@ -66,7 +67,13 @@ private struct DayContent: View {
                     WeightCard(model: model)
                     // A run recorded on a lifting or rest day gets a card of its own. On a running day it is part of
                     // the session card.
-                    if !["run", "other"].contains(model.template.kind) { ForEach(model.data?.recorded ?? []) { RunSummary(id: $0.id).card() } }
+                    if !["run", "other"].contains(model.template.kind) {
+                        ForEach(model.data?.recorded ?? []) { run in
+                            RunSummary(id: run.id, opens: false).card()
+                                .contentShape(Rectangle()).simultaneousGesture(TapGesture().onEnded { openRun = run.id })
+                                .accessibilityAddTraits(.isButton).accessibilityHint("Opens the run")
+                        }
+                    }
                     session(day)
                     others
                     if day.testWeek { TestsCard(model: model) }
@@ -81,6 +88,7 @@ private struct DayContent: View {
             }
         }
         .inlineTitle(selected == Day.today() ? "Today" : Day.label(selected))
+        .navigationDestination(item: $openRun) { id in RunScreen(id: id) { await model.load() } }
         .refreshable { await model.load() }
         .safeAreaInset(edge: .bottom) { if model.template.kind == "lift", model.mode == .log { TimerBar(model: model) } }
         .toast($model.toast)
@@ -178,6 +186,9 @@ private struct DayContent: View {
             }
         }
         .card()
+        // A tap anywhere on the box of a recorded run opens the run, the map included.
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture().onEnded { if ran, let run = model.data?.recorded?.first { openRun = run.id } })
 
         if t.kind == "lift" {
             switch model.mode {

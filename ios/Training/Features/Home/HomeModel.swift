@@ -64,6 +64,8 @@ struct RangeOption: Identifiable {
     static let all: [RangeOption] = [.init(days: 2, label: "2 days"), .init(days: 7, label: "1 week"), .init(days: 14, label: "2 weeks"),
                                      .init(days: 30, label: "1 month"), .init(days: 90, label: "3 months"), .init(days: 180, label: "6 months")]
     static func label(_ days: Int) -> String { all.first { $0.days == days }?.label ?? "\(days) days" }
+    /// "7d", "6m": the range as it is written in a widget's caption.
+    static func short(_ days: Int) -> String { days >= 30 ? "\(days / 30)m" : "\(days)d" }
 }
 
 /// How many days go into one bar or point of a widget's chart.
@@ -90,16 +92,14 @@ struct MetricSpec {
     /// Multiplier from the stored value to the shown one (metres to km).
     var scale: Double = 1
     var digits: Int = 0
-    /// Second metric shown in the caption, with its label.
-    var extra: (label: String, key: String)? = nil
 
     static let all: [CardKind: MetricSpec] = [
         .steps: .init(title: "Steps", icon: "figure.walk", tint: Theme.Palette.accent, key: "movement.steps.value", style: .bars, goalKey: "movement.steps.goal"),
         .restingHR: .init(title: "Resting heart rate", icon: "heart.fill", tint: Theme.Palette.heart, key: "heartRate.restingValue", unit: "bpm"),
-        .hrv: .init(title: "HRV", icon: "waveform.path.ecg", tint: Theme.Palette.test, key: "hrv.lastNightAvg", unit: "ms", extra: ("weekly", "hrv.weeklyAvg")),
-        .bodyBattery: .init(title: "Body Battery", icon: "battery.75percent", tint: Theme.Palette.ok, key: "bodyBattery.maxValue", style: .bars, extra: ("low", "bodyBattery.minValue")),
-        .stress: .init(title: "Stress", icon: "brain.head.profile", tint: Theme.Palette.energy, key: "stress.avgLevel", extra: ("max", "stress.maxLevel")),
-        .calories: .init(title: "Active calories", icon: "flame.fill", tint: Theme.Palette.energy, key: "calories.burnedActive", unit: "kcal", style: .bars, extra: ("total", "calories.burnedTotal")),
+        .hrv: .init(title: "HRV", icon: "waveform.path.ecg", tint: Theme.Palette.test, key: "hrv.lastNightAvg", unit: "ms"),
+        .bodyBattery: .init(title: "Body Battery", icon: "battery.75percent", tint: Theme.Palette.ok, key: "bodyBattery.maxValue", style: .bars),
+        .stress: .init(title: "Stress", icon: "brain.head.profile", tint: Theme.Palette.energy, key: "stress.avgLevel"),
+        .calories: .init(title: "Active calories", icon: "flame.fill", tint: Theme.Palette.energy, key: "calories.burnedActive", unit: "kcal", style: .bars),
         .floors: .init(title: "Floors climbed", icon: "stairs", tint: Theme.Palette.calm, key: "movement.floorsAscended.value", style: .bars, goalKey: "movement.floorsAscended.goal"),
         .distance: .init(title: "Distance on foot", icon: "point.topleft.down.to.point.bottomright.curvepath", tint: Theme.Palette.accent, key: "movement.steps.distanceInMeters", unit: "km", style: .bars, scale: 0.001, digits: 1),
         .sleepScore: .init(title: "Sleep score", icon: "moon.stars.fill", tint: Theme.Palette.sleep, key: "sleep.sleepScores.overall.value"),
@@ -238,11 +238,6 @@ final class HomeModel {
         return nil
     }
 
-    func latestText(_ key: String) -> String? {
-        for back in 0..<14 { if let t = days[Day.add(today, -back)]?[key]?.text { return t } }
-        return nil
-    }
-
     /// One value per day for the last `count` days, oldest first, with nil where the watch has nothing.
     func series(_ key: String, _ count: Int) -> [Double?] { series(count) { self.value(key, on: $0) } }
 
@@ -324,7 +319,8 @@ final class HomeModel {
         case .nutrition: !(dash?.nutrition.isEmpty ?? true)
         case .sleep: latest("sleep.sleepTimeSeconds") != nil
         case .intensity: (0..<14).contains { intensity(on: Day.add(today, -$0)) != nil }
-        case .facts, .all: hasWatchData
+        case .facts: factSheet != nil
+        case .all: hasWatchData
         default: MetricSpec.all[kind].map { latest($0.key) != nil } ?? false
         }
     }
@@ -341,77 +337,6 @@ final class HomeModel {
         }
         return out
     }
-
-    // MARK: Fun facts
-
-    /// A few records and comparisons from everything imported so far.
-    var facts: [Fact] {
-        var out: [Fact] = []
-        let dates = days.keys.sorted()
-        func best(_ key: String, lowest: Bool = false) -> (date: String, value: Double)? {
-            let all = dates.compactMap { d in value(key, on: d).map { (d, $0) } }.filter { $0.1 > 0 }
-            return lowest ? all.min { $0.1 < $1.1 } : all.max { $0.1 < $1.1 }
-        }
-        /// "31 % of X" until the first full one, then "1.4 times X".
-        func share(_ times: Double, part: String, whole: String) -> String {
-            times < 1 ? "\(Fmt.whole(times * 100)) % \(part)" : "\(String(format: "%.1f", times)) times \(whole)"
-        }
-        let steps = dates.compactMap { value("movement.steps.value", on: $0) }
-        if !steps.isEmpty {
-            let km = dates.compactMap { value("movement.steps.distanceInMeters", on: $0) }.reduce(0, +) / 1000
-            let total = "\(Fmt.whole(steps.reduce(0, +))) steps"
-            if km > 0 {
-                let laps = km / 1322 // Route 1 around Iceland is 1,322 km.
-                out.append(Fact(id: "walked", icon: "figure.walk", tint: Theme.Palette.accent, label: "Walked in \(steps.count) days", value: Fmt.whole(km), unit: "km",
-                                detail: share(laps, part: "of the Ring Road around Iceland", whole: "around Iceland on the Ring Road") + ", \(total)", progress: laps.truncatingRemainder(dividingBy: 1)))
-            } else {
-                out.append(Fact(id: "walked", icon: "figure.walk", tint: Theme.Palette.accent, label: "Steps in \(steps.count) days", value: Fmt.whole(steps.reduce(0, +))))
-            }
-        }
-        let climbed = dates.compactMap { value("movement.floorsAscended.distanceInMeters", on: $0) }.reduce(0, +)
-        if climbed > 0 {
-            let peaks = climbed / 2110 // Hvannadalshnúkur, Iceland's highest peak, is 2,110 m.
-            out.append(Fact(id: "climbed", icon: "mountain.2.fill", tint: Theme.Palette.ok, label: "Climbed on stairs and hills", value: Fmt.whole(climbed), unit: "m",
-                            detail: share(peaks, part: "of the way up Hvannadalshnúkur", whole: "up Hvannadalshnúkur") + ", Iceland's highest peak", progress: peaks.truncatingRemainder(dividingBy: 1)))
-        }
-        if let b = best("movement.steps.value") {
-            out.append(Fact(id: "mostSteps", icon: "trophy.fill", tint: Theme.Palette.energy, label: "Most steps in a day", value: Fmt.whole(b.value), detail: Day.label(b.date)))
-        }
-        // Steps goal streak, counting back from today or yesterday.
-        var streak = 0
-        for back in 0..<dates.count {
-            let d = Day.add(today, -back)
-            if let v = value("movement.steps.value", on: d), let g = value("movement.steps.goal", on: d), v >= g { streak += 1; continue }
-            if back > 0 { break } // today is not over yet, so it cannot break a streak
-        }
-        if streak >= 2 { out.append(Fact(id: "streak", icon: "flame.fill", tint: Theme.Palette.danger, label: "Step goal streak", value: "\(streak)", unit: "days", detail: "in a row")) }
-        if let b = best("heartRate.restingValue", lowest: true) {
-            out.append(Fact(id: "restingHR", icon: "heart.fill", tint: Theme.Palette.heart, label: "Lowest resting HR", value: Fmt.whole(b.value), unit: "bpm", detail: Day.label(b.date)))
-        }
-        if let b = best("hrv.lastNightAvg") {
-            out.append(Fact(id: "hrv", icon: "waveform.path.ecg", tint: Theme.Palette.calm, label: "Best overnight HRV", value: Fmt.whole(b.value), unit: "ms", detail: Day.label(b.date)))
-        }
-        if let b = best("sleep.sleepTimeSeconds") {
-            out.append(Fact(id: "longestNight", icon: "moon.zzz.fill", tint: Theme.Palette.sleep, label: "Longest night", value: Fmt.hours(b.value), detail: Day.label(b.date)))
-        }
-        if let avg = average("sleep.sleepTimeSeconds", 7) {
-            out.append(Fact(id: "sleepWeek", icon: "bed.double.fill", tint: Theme.Palette.sleep, label: "Average night", value: Fmt.hours(avg), detail: "last 7 days"))
-        }
-        return out
-    }
-}
-
-/// One record or comparison for the fun facts widget: a big number with what it is and when it happened.
-struct Fact: Identifiable {
-    let id: String
-    let icon: String
-    let tint: Color
-    let label: String
-    let value: String
-    var unit = ""
-    var detail = ""
-    /// How far along a famous distance this is, 0 to 1. A fact with one is drawn wide, with a ring.
-    var progress: Double? = nil
 }
 
 extension Fmt {

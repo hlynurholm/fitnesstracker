@@ -69,6 +69,14 @@ the other tabs use. `HomeModel.swift` holds the widget list (`CardKind`), what e
   once for older data.
 - "Next session" shows today's session until it is done, then tomorrow's. "Last run" draws the route of the latest
   run. Both open the full page on tap.
+- Every chart widget is built the same way: the number, the chart (`ValueAndChart`), then one line under it
+  (`ChartCaption`) with short wording such as "goal 9,000 · 6m avg 8,601". Keep new widgets to that.
+- HRV is drawn as dots on a line over a shaded band (`BandSpark`). The band is the watch's own balanced range for
+  each night (`hrv.baseline.balancedLow` and `balancedUpper`); without those it is the middle half of his last four
+  weeks, and the caption says "usual" instead of "healthy".
+- Fun facts change every day (`FunFacts.swift`): the date picks a theme (record days, last 7 days, best months,
+  totals, best weekdays, off days, best weeks, streaks), which facts are shown, their order, the layout and the look.
+  Launch with `TRAINING_FACTS_DAY=3` to see the widget as it will be in three days.
 - A widget with no data stays out of the grid until there is some. To add a widget for another metric, add a
   `CardKind` case and a `MetricSpec` entry. "Everything from your watch" lists every stored value.
 

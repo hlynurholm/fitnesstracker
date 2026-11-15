@@ -125,6 +125,7 @@ struct HomeScreen: View {
         case .nutrition: NutritionCard(model: model, setting: setting, wide: wide)
         case .sleep: SleepCard(model: model, setting: setting, wide: wide)
         case .intensity: IntensityCard(model: model, setting: setting, wide: wide)
+        case .hrv: HRVCard(model: model, setting: setting, wide: wide)
         case .facts: FactsCard(model: model)
         case .all: AllMetricsCard(model: model)
         default: if let spec = MetricSpec.all[setting.kind] { MetricCard(model: model, setting: setting, spec: spec, wide: wide) }
@@ -189,6 +190,7 @@ struct HomeScreen: View {
             } label: {
                 Label("Resolution: \(ResolutionOption.label(every))", systemImage: "chart.bar.xaxis")
             }
+            if setting.kind != .hrv {
             Menu {
                 Picker("Chart", selection: Binding(get: { line ? "line" : "bars" }, set: { kind in withAnimation { model.update(setting.kind) { $0.chart = kind } } })) {
                     Label("Bars", systemImage: "chart.bar.fill").tag("bars")
@@ -196,6 +198,7 @@ struct HomeScreen: View {
                 }
             } label: {
                 Label("Chart: \(line ? "line" : "bars")", systemImage: line ? "chart.xyaxis.line" : "chart.bar.fill")
+            }
             }
             Button { askApply = ApplyAll(range: span, every: every) } label: { Label("Use this range and resolution for all widgets", systemImage: "square.on.square") }
         }
@@ -319,6 +322,35 @@ private struct Caption: View {
     var body: some View { Text(text).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).fixedSize(horizontal: false, vertical: true) }
 }
 
+/// The one line under a widget's chart: a few short facts, never wrapped, so every widget ends the same way.
+private struct ChartCaption: View {
+    let parts: [String?]
+    init(_ parts: [String?]) { self.parts = parts }
+    var body: some View {
+        Text(parts.compactMap { $0 }.joined(separator: " · ")).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+            .lineLimit(1).minimumScaleFactor(0.75).frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A widget's number and chart, always in the same order: the number, then the chart (beside the number on a wide
+/// widget with room for it, under it otherwise). The caption goes under this.
+private struct ValueAndChart<Chart: View>: View {
+    let value: String
+    var unit: String = ""
+    let wide: Bool
+    /// The chart has too many points to share the row with the number.
+    var long = false
+    @ViewBuilder var chart: Chart
+    var body: some View {
+        if wide, !long {
+            HStack(alignment: .bottom, spacing: Theme.Space.l) { BigValue(value: value, unit: unit); chart }
+        } else {
+            BigValue(value: value, unit: unit)
+            chart
+        }
+    }
+}
+
 /// "today", "yesterday" or the date a value is from, when it is not today's.
 private func dayNote(_ date: String, today: String) -> String? {
     date == today ? nil : date == Day.add(today, -1) ? "yesterday" : Day.short(date)
@@ -344,33 +376,54 @@ private struct MetricCard: View {
             CardHeader(kind: kind) {
                 if let latest, let goal, goal > 0 { ProgressRing(progress: latest.value / goal, color: spec.tint, size: 22) }
             }
-            if wide, chart.values.count > 45 {
-                // A chart with many points needs the whole width of the widget, so it goes under the value.
-                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) { BigValue(value: latest.map { show($0.value) } ?? "–", unit: spec.unit); Caption(caption(latest, goal)) }
-                chart
-            } else if wide {
-                HStack(alignment: .bottom, spacing: Theme.Space.l) {
-                    VStack(alignment: .leading, spacing: 2) { BigValue(value: latest.map { show($0.value) } ?? "–", unit: spec.unit); Caption(caption(latest, goal)) }
-                    chart
-                }
-            } else {
-                BigValue(value: latest.map { show($0.value) } ?? "–", unit: spec.unit)
-                chart
-                Caption(caption(latest, goal))
-            }
+            ValueAndChart(value: latest.map { show($0.value) } ?? "–", unit: spec.unit, wide: wide, long: chart.values.count > 45) { chart }
+            ChartCaption([latest.flatMap { dayNote($0.date, today: model.today) }, goal.flatMap { $0 > 0 ? "goal \(show($0))" : nil },
+                          model.average(spec.key, days).map { "\(RangeOption.short(days)) avg \(show($0))" }])
         }
         .accessibilityElement(children: .combine)
     }
 
-    private func caption(_ latest: (date: String, value: Double)?, _ goal: Double?) -> String {
-        var parts: [String] = []
-        if let latest, let note = dayNote(latest.date, today: model.today) { parts.append(note) }
-        if let goal, goal > 0 { parts.append("goal \(show(goal))") }
-        if kind == .bodyFat || kind == .leanMass { parts.append("from your scale") } else if let avg = model.average(spec.key, setting.range ?? 7) { parts.append("\(setting.range.map { RangeOption.label($0) } ?? "7-day") avg \(show(avg))") }
-        if let extra = spec.extra, let latest, let v = model.value(extra.key, on: latest.date) { parts.append("\(extra.label) \(show(v))") }
-        if kind == .hrv, let status = model.latestText("hrv.status") { parts.append(status.lowercased()) }
-        if kind == .stress, let q = model.latestText("stress.qualifier") { parts.append(q.replacingOccurrences(of: "_", with: " ")) }
-        return parts.joined(separator: " · ")
+    /// Days the caption's average covers: the widget's range once one is chosen, a week until then.
+    private var days: Int { setting.range ?? 7 }
+}
+
+/// Overnight heart rate variability as dots on a line, over the range the watch calls balanced for him, so one look
+/// says whether it is where it should be.
+private struct HRVCard: View {
+    let model: HomeModel
+    let setting: CardSetting
+    let wide: Bool
+
+    var body: some View {
+        let span = setting.span(wide: wide), every = setting.every(wide: wide)
+        let latest = model.latest("hrv.lastNightAvg")
+        let values = model.chart(span, every: every) { model.value("hrv.lastNightAvg", on: $0) }
+        // The watch's own balanced range for each night. Without one (an older import), the middle of his own nights.
+        var low = model.chart(span, every: every) { model.value("hrv.baseline.balancedLow", on: $0) }
+        var high = model.chart(span, every: every) { model.value("hrv.baseline.balancedUpper", on: $0) }
+        let own = low.allSatisfy { $0 == nil } ? HRVCard.usual(model.series("hrv.lastNightAvg", 28).compactMap { $0 }) : nil
+        let _ = own.map { r in low = values.map { _ in r.low }; high = values.map { _ in r.high } }
+        let range = own ?? latest.flatMap { l in model.value("hrv.baseline.balancedLow", on: l.date).flatMap { lo in model.value("hrv.baseline.balancedUpper", on: l.date).map { (low: lo, high: $0) } } }
+        let floor = latest.flatMap { model.value("hrv.baseline.lowUpper", on: $0.date) }
+        let state: (text: String, color: Color)? = latest.flatMap { l in range.map { r in
+            l.value < (floor ?? -1) ? ("Low", Theme.Palette.danger) : l.value < r.low ? ("Below range", Theme.Palette.warn) : l.value > r.high ? ("Above range", Theme.Palette.warn) : ("In range", Theme.Palette.ok)
+        } }
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            CardHeader(kind: .hrv) { if let state { Text(state.text).font(Theme.Typography.label).foregroundStyle(state.color) } }
+            ValueAndChart(value: latest.map { Fmt.whole($0.value) } ?? "–", unit: "ms", wide: wide, long: values.count > 45) {
+                BandSpark(values: values, low: low, high: high, floor: floor, color: CardKind.hrv.tint, height: wide ? 72 : 44)
+            }
+            ChartCaption([latest.flatMap { dayNote($0.date, today: model.today) }, range.map { "\(own == nil ? "healthy" : "usual") \(Fmt.whole($0.low))–\(Fmt.whole($0.high))" },
+                          model.average("hrv.lastNightAvg", setting.range ?? 7).map { "\(RangeOption.short(setting.range ?? 7)) avg \(Fmt.whole($0))" }])
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The middle half of a set of nights: from the 25th to the 75th percentile.
+    static func usual(_ nights: [Double]) -> (low: Double, high: Double)? {
+        guard nights.count >= 7 else { return nil }
+        let sorted = nights.sorted()
+        return (sorted[sorted.count / 4], sorted[sorted.count * 3 / 4])
     }
 }
 
@@ -386,25 +439,40 @@ private struct SleepCard: View {
         let score = night.flatMap { model.value("sleep.sleepScores.overall.value", on: $0.date) }
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: .sleep) { if let score { Text("score \(Fmt.whole(score))").font(Theme.Typography.label) } }
-            HStack(alignment: .bottom, spacing: Theme.Space.l) {
-                VStack(alignment: .leading, spacing: 2) {
-                    BigValue(value: night.map { Fmt.hours($0.value) } ?? "–")
-                    Caption([night.flatMap { dayNote($0.date, today: model.today) } ?? "last night", model.average("sleep.sleepTimeSeconds", setting.range ?? 7).map { "\(setting.range.map { RangeOption.label($0) } ?? "7-day") avg \(Fmt.hours($0))" }].compactMap { $0 }.joined(separator: " · "))
-                }
-                if wide, !longDaily { nights(56) }
-            }
-            if !wide || longDaily { nights(wide ? 64 : 44) } // a long night-by-night chart gets the full width
+            ValueAndChart(value: night.map { Fmt.hours($0.value) } ?? "–", wide: wide, long: longDaily) { nights(wide ? 64 : 44) }
+            ChartCaption([night.flatMap { dayNote($0.date, today: model.today) }, model.average("sleep.sleepTimeSeconds", setting.range ?? 7).map { "\(RangeOption.short(setting.range ?? 7)) avg \(Fmt.hours($0))" }])
             if stages.contains(where: { $0.1 > 0 }) {
                 SegmentBar(parts: stages.map { ($0.1, $0.2) })
-                HStack(spacing: Theme.Space.m) {
-                    ForEach(stages.filter { $0.1 > 0 }, id: \.0) { s in
-                        HStack(spacing: 3) { Circle().fill(s.2).frame(width: 6, height: 6); Text("\(s.0) \(Fmt.time(s.1 / 60))").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted) }
+                // The stages at a size that can be read: in one row where that fits, two by two where it does not.
+                let shown = stages.filter { $0.1 > 0 }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 0) {
+                        ForEach(Array(shown.enumerated()), id: \.offset) { i, s in
+                            if i > 0 { Spacer(minLength: Theme.Space.xs) }
+                            stageLabel(s).fixedSize()
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                        ForEach(Array(stride(from: 0, to: shown.count, by: 2)), id: \.self) { start in
+                            HStack(spacing: Theme.Space.s) {
+                                ForEach(shown[start..<min(start + 2, shown.count)], id: \.0) { stageLabel($0).minimumScaleFactor(0.85).frame(maxWidth: .infinity, alignment: .leading) }
+                            }
+                        }
                     }
                 }
-                .lineLimit(1).minimumScaleFactor(0.6)
             }
         }
     }
+
+    private func stageLabel(_ s: (String, Double, Color)) -> some View {
+        HStack(spacing: Theme.Space.xs) {
+            Circle().fill(s.2).frame(width: 7, height: 7)
+            Text(s.0).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+            Text(Fmt.time(s.1 / 60)).font(Theme.Typography.caption.weight(.semibold).monospacedDigit())
+        }
+        .lineLimit(1)
+    }
+
     /// More nights than fit beside the value, each drawn on its own.
     private var longDaily: Bool { wide && model.chart(setting.span(wide: wide), every: setting.every(wide: wide)) { _ in nil }.count > 45 }
 
@@ -427,7 +495,7 @@ private struct IntensityCard: View {
             CardHeader(kind: .intensity) { ProgressRing(progress: week / max(goal, 1), color: CardKind.intensity.tint, size: 22) }
             BigValue(value: Fmt.whole(week), unit: "min")
             Spark(values: model.chart(setting.span(wide: wide), every: setting.every(wide: wide)) { model.intensity(on: $0) }, style: setting.chartStyle, color: CardKind.intensity.tint, height: wide ? 72 : 44)
-            Caption("this week · goal \(Fmt.whole(goal))")
+            ChartCaption(["this week", "goal \(Fmt.whole(goal))"])
         }
     }
 }
@@ -545,7 +613,7 @@ private struct WeightCard: View {
             CardHeader(kind: .weight)
             BigValue(value: avg.map { String(format: "%.1f", $0) } ?? "–", unit: "kg")
             Spark(values: model.chart(setting.span(wide: wide), every: setting.every(wide: wide)) { byDay[$0] }, style: setting.chartStyle, color: CardKind.weight.tint, height: wide ? 72 : 44)
-            Caption([recent.isEmpty ? latestDate.map { "last weighed \(Day.short($0))" } : "7-day avg", goal.flatMap { g in avg.map { String(format: "%.1f kg to goal", $0 - g) } }].compactMap { $0 }.joined(separator: " · "))
+            ChartCaption([recent.isEmpty ? latestDate.map { Day.short($0) } : "7d avg", goal.flatMap { g in avg.map { String(format: "%.1f kg to goal", $0 - g) } }])
         }
     }
 }
@@ -564,8 +632,8 @@ private struct NutritionCard: View {
             CardHeader(kind: .nutrition) { if let kcal = day?.calories, kcalTarget > 0 { ProgressRing(progress: kcal / kcalTarget, color: CardKind.nutrition.tint, size: 22) } }
             BigValue(value: Fmt.whole(day?.calories), unit: "kcal")
             Spark(values: model.chart(setting.span(wide: wide), every: setting.every(wide: wide)) { date in byDay[date] }, style: setting.chartStyle, color: CardKind.nutrition.tint, goal: kcalTarget > 0 ? kcalTarget : nil, height: wide ? 72 : 44)
-            Caption([day.flatMap { dayNote($0.date, today: model.today) }, kcalTarget > 0 ? "target \(Fmt.whole(kcalTarget))" : nil,
-                     day?.protein_g.map { "protein \(Fmt.whole($0)) of \(Fmt.whole(proteinTarget)) g" }].compactMap { $0 }.joined(separator: " · "))
+            ChartCaption([day.flatMap { dayNote($0.date, today: model.today) }, kcalTarget > 0 ? "goal \(Fmt.whole(kcalTarget))" : nil,
+                          day?.protein_g.map { "protein \(Fmt.whole($0))/\(Fmt.whole(proteinTarget)) g" }])
         }
     }
 }
@@ -575,61 +643,94 @@ private struct NutritionCard: View {
 private struct FactsCard: View {
     let model: HomeModel
     var body: some View {
-        let facts = model.facts
-        let wide = facts.filter { $0.progress != nil }, small = facts.filter { $0.progress == nil }
-        VStack(alignment: .leading, spacing: Theme.Space.s) {
-            CardHeader(kind: .facts)
-            // Comparisons with a famous distance: big number on the left, how far along it on a ring.
-            ForEach(wide) { fact in
-                HStack(spacing: Theme.Space.m) {
-                    FactText(fact: fact, big: true)
-                    Spacer(minLength: 0)
-                    ZStack {
-                        ProgressRing(progress: fact.progress ?? 0, color: fact.tint, size: 58)
-                        Image(systemName: fact.icon).font(.body.weight(.semibold)).foregroundStyle(fact.tint)
+        if let sheet = model.factSheet {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
+                CardHeader(kind: .facts) { Text(sheet.title).font(Theme.Typography.label) }
+                ForEach(Array(sheet.rows.enumerated()), id: \.offset) { _, row in
+                    if sheet.layout == .list {
+                        FactLine(fact: row[0])
+                    } else if row.count == 1 {
+                        FactTile(fact: row[0], wide: true, paint: sheet.look == .bold ? .solid : .wash)
+                    } else {
+                        HStack(spacing: Theme.Space.s) {
+                            ForEach(row) { FactTile(fact: $0, wide: false, paint: sheet.look == .lines ? .outline : .wash) }
+                        }
+                        .fixedSize(horizontal: false, vertical: true) // both tiles as tall as the taller one
                     }
                 }
-                .factTile(fact.tint)
-            }
-            // Records, two to a row.
-            ForEach(Array(stride(from: 0, to: small.count, by: 2)), id: \.self) { i in
-                HStack(spacing: Theme.Space.s) {
-                    ForEach(small[i..<min(i + 2, small.count)]) { fact in
-                        FactText(fact: fact).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).factTile(fact.tint)
-                    }
-                }
-                .fixedSize(horizontal: false, vertical: true) // both tiles as tall as the taller one
             }
         }
     }
 }
 
-private struct FactText: View {
+/// One fact as a tile: its name, a big number and a line about it. A wide tile carries its icon on the right,
+/// inside a ring when the fact measures progress along something.
+private struct FactTile: View {
+    enum Paint { case wash, solid, outline }
     let fact: Fact
-    var big = false
+    let wide: Bool
+    let paint: Paint
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: Theme.Space.xs) {
-                if !big { Image(systemName: fact.icon).font(.caption.weight(.semibold)) }
-                Text(fact.label.uppercased()).font(Theme.Typography.label).lineLimit(1).minimumScaleFactor(0.6)
+        let solid = paint == .solid
+        let accent = solid ? Color.white : fact.tint
+        HStack(spacing: Theme.Space.m) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Theme.Space.xs) {
+                    if !wide { Image(systemName: fact.icon).font(.caption.weight(.semibold)) }
+                    Text(fact.label.uppercased()).font(Theme.Typography.label).lineLimit(1).minimumScaleFactor(0.6)
+                }
+                .foregroundStyle(accent.opacity(solid ? 0.85 : 1))
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(fact.value).font(wide ? Theme.Typography.timer : Theme.Typography.numeral).lineLimit(1).minimumScaleFactor(0.5).foregroundStyle(solid ? Color.white : Theme.Palette.text)
+                    if !fact.unit.isEmpty { Text(fact.unit).font(Theme.Typography.callout).foregroundStyle(solid ? Color.white.opacity(0.8) : Theme.Palette.muted) }
+                }
+                if !fact.detail.isEmpty {
+                    Text(fact.detail).font(Theme.Typography.caption).foregroundStyle(solid ? Color.white.opacity(0.85) : Theme.Palette.muted).fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .foregroundStyle(fact.tint)
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(fact.value).font(big ? Theme.Typography.timer : Theme.Typography.numeral).lineLimit(1).minimumScaleFactor(0.6)
-                if !fact.unit.isEmpty { Text(fact.unit).font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted) }
+            if wide {
+                Spacer(minLength: 0)
+                ZStack {
+                    if let progress = fact.progress { ProgressRing(progress: progress, color: accent, size: 58) } else { Circle().fill(accent.opacity(solid ? 0.2 : 0.15)).frame(width: 58, height: 58) }
+                    Image(systemName: fact.icon).font(.title3.weight(.semibold)).foregroundStyle(accent)
+                }
             }
-            if !fact.detail.isEmpty {
-                Text(fact.detail).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(Theme.Space.m)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+            switch paint {
+            case .wash: shape.fill(fact.tint.opacity(0.12))
+            case .solid: shape.fill(fact.tint.gradient)
+            case .outline: shape.strokeBorder(fact.tint.opacity(0.5), lineWidth: 1.5)
             }
         }
         .accessibilityElement(children: .combine)
     }
 }
 
-private extension View {
-    /// A tile washed in the fact's own colour.
-    func factTile(_ tint: Color) -> some View {
-        padding(Theme.Space.m).background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+/// One fact as a line of a list: icon, name and note on the left, the number on the right.
+private struct FactLine: View {
+    let fact: Fact
+    var body: some View {
+        HStack(spacing: Theme.Space.m) {
+            Image(systemName: fact.icon).font(.footnote.weight(.semibold)).foregroundStyle(fact.tint)
+                .frame(width: 34, height: 34).background(fact.tint.opacity(0.14), in: Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                Text(fact.label).font(Theme.Typography.callout.weight(.medium)).lineLimit(1).minimumScaleFactor(0.8)
+                if !fact.detail.isEmpty { Text(fact.detail).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).lineLimit(1).minimumScaleFactor(0.8) }
+            }
+            Spacer(minLength: Theme.Space.s)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(fact.value).font(Theme.Typography.numeral).foregroundStyle(fact.tint)
+                if !fact.unit.isEmpty { Text(fact.unit).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
+            }
+            .lineLimit(1).layoutPriority(1)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
     }
 }
 

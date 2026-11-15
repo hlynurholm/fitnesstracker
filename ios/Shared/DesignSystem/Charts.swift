@@ -357,6 +357,57 @@ struct Spark: View {
     }
 }
 
+/// Tiny axis-free chart for a reading that should stay inside a range: a shaded band for the range, a line through
+/// the readings and a dot on each one, coloured by where it sits (inside, outside, or under `floor`).
+struct BandSpark: View {
+    let values: [Double?]
+    /// The range for each slot. A slot without one leaves a gap in the band.
+    let low: [Double?]
+    let high: [Double?]
+    /// Readings under this are drawn as low.
+    var floor: Double? = nil
+    var color: Color = Theme.Palette.accent
+    var height: CGFloat = 44
+
+    private func tone(_ index: Int, _ value: Double) -> Color {
+        if let floor, value < floor { return Theme.Palette.danger }
+        guard index < low.count, index < high.count, let lo = low[index], let hi = high[index] else { return color }
+        return value >= lo && value <= hi ? Theme.Palette.ok : Theme.Palette.warn
+    }
+
+    var body: some View {
+        let slots = values.indices.map(String.init)
+        let points = Array(values.enumerated()).compactMap { i, v in v.map { (slot: String(i), index: i, value: $0) } }
+        let band = values.indices.compactMap { i -> (slot: String, low: Double, high: Double)? in
+            guard i < low.count, i < high.count, let lo = low[i], let hi = high[i] else { return nil }
+            return (String(i), lo, hi)
+        }
+        let all = points.map(\.value) + band.flatMap { [$0.low, $0.high] }
+        let lo = all.min() ?? 0, hi = all.max() ?? 1
+        let pad = max((hi - lo) * 0.15, 0.5)
+        // Fewer, larger dots on a short chart; small ones when every night of several months is shown.
+        let dot: CGFloat = values.count > 60 ? 8 : values.count > 30 ? 16 : 30
+        Chart {
+            ForEach(band, id: \.slot) { b in
+                AreaMark(x: .value("Day", b.slot), yStart: .value("Low", b.low), yEnd: .value("High", b.high))
+                    .foregroundStyle(Theme.Palette.ok.opacity(0.16)).interpolationMethod(.monotone)
+            }
+            ForEach(points, id: \.index) { p in
+                LineMark(x: .value("Day", p.slot), y: .value("Value", p.value))
+                    .foregroundStyle(color.opacity(0.55)).lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)).interpolationMethod(.monotone)
+            }
+            ForEach(points, id: \.index) { p in
+                PointMark(x: .value("Day", p.slot), y: .value("Value", p.value)).symbolSize(dot).foregroundStyle(tone(p.index, p.value))
+            }
+        }
+        .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
+        .chartXScale(domain: slots)
+        .chartYScale(domain: (lo - pad)...(hi + pad))
+        .frame(height: height)
+        .accessibilityHidden(true)
+    }
+}
+
 /// Ring that fills towards a goal.
 struct ProgressRing: View {
     let progress: Double

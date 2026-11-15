@@ -166,21 +166,22 @@ struct StorySticker: View {
     private func ticket(_ u: CGFloat, solid: Bool = false) -> some View {
         let frosted = options.frosted && !solid
         let ink: Color = frosted ? .white : options.color.ink
-        let shape = RoundedRectangle(cornerRadius: u * 6, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: u * 5, style: .continuous)
         let rows: [(String, String?)] = [("Distance", "\(run.km) km"), ("Pace", "\(run.pace) /km"), ("Time", run.time), ("Climb", run.climb), ("Heart", run.heart.map { "\($0) bpm" })]
-        return VStack(alignment: .leading, spacing: u * 2.6) {
-            Text("\(run.weekday) run".uppercased()).font(display(u * 13)).foregroundStyle(ink)
-            Text(run.date.uppercased()).font(label(u * 4.6)).kerning(u * 0.25).foregroundStyle(ink.opacity(0.8))
+        return VStack(alignment: .leading, spacing: u * 2) {
+            Text("\(run.weekday) run".uppercased()).font(display(u * 9.5)).foregroundStyle(ink).lineLimit(1).minimumScaleFactor(0.7)
+            Text(run.date.uppercased()).font(label(u * 3.6)).kerning(u * 0.2).foregroundStyle(ink.opacity(0.8)).lineLimit(1)
             ForEach(rows.filter { $0.1 != nil }, id: \.0) { row in
                 HStack(alignment: .firstTextBaseline, spacing: u * 2) {
-                    Text(row.0.uppercased()).font(label(u * 4.6)).kerning(u * 0.25)
-                    Line().stroke(style: StrokeStyle(lineWidth: u * 0.5, dash: [u * 0.5, u * 1.2])).frame(height: u * 0.5).opacity(0.55)
-                    Text(row.1!).font(display(u * 8.5))
+                    Text(row.0.uppercased()).font(label(u * 3.6)).kerning(u * 0.2).lineLimit(1).fixedSize()
+                    Line().stroke(style: StrokeStyle(lineWidth: u * 0.4, dash: [u * 0.4, u * 1.1])).frame(height: u * 0.4).opacity(0.55)
+                    // A number never breaks over two lines.
+                    Text(row.1!).font(display(u * 6.2)).lineLimit(1).fixedSize()
                 }
                 .foregroundStyle(ink)
             }
         }
-        .padding(u * 6)
+        .padding(u * 5)
         .background {
             if frosted {
                 shape.fill(.white.opacity(0.16)).overlay(shape.strokeBorder(.white.opacity(0.35), lineWidth: max(u * 0.3, 0.5)))
@@ -189,7 +190,7 @@ struct StorySticker: View {
             }
         }
         .shadow(color: .clear, radius: 0)
-        .padding(.horizontal, u * 10)
+        .padding(.horizontal, u * 17)
     }
 
     /// 3. One huge number under a name of the user's own.

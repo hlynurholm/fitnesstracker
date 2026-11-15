@@ -1,9 +1,9 @@
 import { Encoder, Profile } from "@garmin/fitsdk";
 
 // Build a synthetic 5 km run as a FIT file: 1500 s, 5000 m, HR climbing 140 -> 170.
-export function makeFit() {
+export function makeFit({ startIso = "2026-10-27T07:00:00Z" } = {}) {
   const enc = new Encoder();
-  const start = new Date("2026-10-27T07:00:00Z");
+  const start = new Date(startIso);
   enc.writeMesg({ mesgNum: Profile.MesgNum.FILE_ID, type: "activity", manufacturer: "garmin", product: 4315, timeCreated: start, serialNumber: 12345 });
   const n = 300;
   const records = [];

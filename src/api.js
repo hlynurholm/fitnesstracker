@@ -636,16 +636,28 @@ async function trackFromUpload(env, activity, settings) {
 // Stores one file and everything parsed from it: the upload row, activities matched to a workout, nutrition days and
 // weigh-ins. Used by the upload endpoint and by the Garmin sync. tz is minutes behind UTC, as the browser reports it.
 export async function ingestFile(env, settings, { filename, contentType, bytes, workoutId = null, dateHint = null, sourceHint = null, tz = null }) {
+  // The same file again (a second manual upload, or the sync after a manual upload) is reported, not ingested twice.
+  const sha = await sha256Hex(bytes);
+  const dup = await findDuplicateUpload(env, sha, filename, bytes);
+  if (dup) {
+    if (workoutId && !dup.workout_id) {
+      await env.DB.prepare("UPDATE uploads SET workout_id = ? WHERE id = ?").bind(workoutId, dup.id).run();
+      await env.DB.prepare("UPDATE activities SET workout_id = ? WHERE upload_id = ? AND workout_id IS NULL").bind(workoutId, dup.id).run();
+      await fillWorkoutFromActivities(env, workoutId);
+    }
+    const { results: acts } = await env.DB.prepare("SELECT id, workout_id, date, distance_m, duration_s, avg_hr, avg_pace_s_per_km, best_5k_s, sport FROM activities WHERE upload_id = ? ORDER BY id").bind(dup.id).all();
+    return { upload_id: dup.id, filename, format: dup.format, source: dup.source, status: "duplicate", duplicate: true, uploaded_at: dup.uploaded_at, error: null, activities: acts, nutrition_days: 0, body_metrics: 0 };
+  }
   const maxHr = num(settings.max_hr) || PROGRAM.heartRate.maxBpm;
   const parsed = parseUpload({ filename, contentType, bytes, sourceHint, maxHr });
   const gz = await gzip(bytes);
   const storeRaw = gz.length <= MAX_RAW_GZ;
   const parsedJson = parsed.parsed ? JSON.stringify(parsed.parsed) : null;
   const res = await env.DB.prepare(
-    `INSERT INTO uploads (workout_id, source, format, filename, content_type, size_bytes, raw, raw_encoding, parsed_json, parse_status, parse_error)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO uploads (workout_id, source, format, filename, content_type, size_bytes, raw, raw_encoding, parsed_json, parse_status, parse_error, content_sha256)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(workoutId, parsed.source, parsed.format, filename, contentType || null, bytes.length, storeRaw ? toArrayBuffer(gz) : null, storeRaw ? "gzip" : null,
-    parsedJson && parsedJson.length < 1_500_000 ? parsedJson : null, parsed.status, parsed.error || (storeRaw ? null : "Raw file too large to store (over 1.8 MB compressed); parsed data kept")).run();
+    parsedJson && parsedJson.length < 1_500_000 ? parsedJson : null, parsed.status, parsed.error || (storeRaw ? null : "Raw file too large to store (over 1.8 MB compressed); parsed data kept"), sha).run();
   const uploadId = res.meta.last_row_id;
   const out = { upload_id: uploadId, filename, format: parsed.format, source: parsed.source, status: parsed.status, error: parsed.error, activities: [], nutrition_days: 0, body_metrics: 0 };
 
@@ -665,6 +677,31 @@ export async function ingestFile(env, settings, { filename, contentType, bytes, 
     out.body_metrics++;
   }
   return out;
+}
+
+async function sha256Hex(bytes) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// An upload with the same content, by hash, or for rows stored before hashes existed, by filename and size with the
+// stored bytes compared. A legacy match gets its hash filled in so the next check is cheap.
+async function findDuplicateUpload(env, sha, filename, bytes) {
+  const cols = "id, workout_id, source, format, uploaded_at";
+  const byHash = await env.DB.prepare(`SELECT ${cols} FROM uploads WHERE content_sha256 = ? ORDER BY id LIMIT 1`).bind(sha).first();
+  if (byHash) return byHash;
+  const { results } = await env.DB.prepare(`SELECT ${cols}, raw, raw_encoding FROM uploads WHERE content_sha256 IS NULL AND filename = ? AND size_bytes = ? AND raw IS NOT NULL ORDER BY id LIMIT 5`).bind(filename, bytes.length).all();
+  for (const row of results) {
+    let stored = blobToBytes(row.raw);
+    if (row.raw_encoding === "gzip") stored = await gunzip(stored);
+    if (stored.length !== bytes.length) continue;
+    let same = true;
+    for (let i = 0; i < bytes.length; i++) if (stored[i] !== bytes[i]) { same = false; break; }
+    if (!same) continue;
+    await env.DB.prepare("UPDATE uploads SET content_sha256 = ? WHERE id = ?").bind(sha, row.id).run();
+    return { id: row.id, workout_id: row.workout_id, source: row.source, format: row.format, uploaded_at: row.uploaded_at };
+  }
+  return null;
 }
 
 // ---------- dashboard / export ----------

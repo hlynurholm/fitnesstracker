@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { makeFit } from "./make-fit.js";
 fs.mkdirSync("test/out", { recursive: true });
 fs.writeFileSync("test/out/run.fit", makeFit());
+fs.writeFileSync("test/out/run2.fit", makeFit({ startIso: "2026-10-27T17:00:00Z" })); // a different run on the same day
 fs.writeFileSync("test/out/mfp.csv", `Date,Meal,Calories,Fat (g),Saturated Fat,Polyunsaturated Fat,Monounsaturated Fat,Trans Fat,Cholesterol,Sodium (mg),Potassium,Carbohydrates (g),Fiber,Sugar,Protein (g),Vitamin A,Vitamin C,Calcium,Iron,Note
 2026-10-26,Lunch,700,20,5,2,8,0,100,800,600,70,8,10,50,10,20,15,10,
 2026-10-26,Dinner,800,25,8,3,10,0,120,900,700,80,10,12,50,10,20,15,10,

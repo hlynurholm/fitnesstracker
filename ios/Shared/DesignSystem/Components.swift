@@ -78,21 +78,38 @@ struct GrainyGradient: View {
     }
 }
 
-/// Behind every screen: charcoal with soft coloured lights and grain.
+/// Behind every screen: charcoal with slow waves of a quiet blue rolling across it, and grain.
 struct Backdrop: View {
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            ZStack {
-                Theme.Palette.background
-                Circle().fill(Theme.Palette.glow[0]).frame(width: w * 0.95).position(x: w * 0.1, y: h * 0.12)
-                Circle().fill(Theme.Palette.glow[1]).frame(width: w * 0.7).position(x: w * 0.95, y: h * 0.42)
-                Circle().fill(Theme.Palette.glow[2]).frame(width: w * 0.8).position(x: w * 0.15, y: h * 0.85)
-            }
-            .blur(radius: 90)
-            .overlay { Theme.Palette.background.opacity(0.45) }
-            .overlay { Grain().blendMode(.overlay).opacity(0.35) }
+        ZStack {
+            Theme.Palette.background
+            // Each band is a wave along its top edge, filled downwards and fading out, so the bands overlap softly.
+            Wave(height: 0.10, swell: 0.07, turns: 1.0, phase: 0.6).fill(LinearGradient(colors: [Theme.Palette.waves[2], Theme.Palette.waves[1].opacity(0)], startPoint: .top, endPoint: .bottom))
+            Wave(height: 0.36, swell: 0.085, turns: 0.8, phase: 2.6).fill(LinearGradient(colors: [Theme.Palette.waves[1], Theme.Palette.waves[0].opacity(0)], startPoint: .top, endPoint: .bottom))
+            Wave(height: 0.60, swell: 0.075, turns: 1.2, phase: 4.4).fill(LinearGradient(colors: [Theme.Palette.waves[2].opacity(0.85), Theme.Palette.waves[0].opacity(0)], startPoint: .top, endPoint: .bottom))
+            Wave(height: 0.84, swell: 0.06, turns: 0.9, phase: 1.2).fill(LinearGradient(colors: [Theme.Palette.waves[1], Theme.Palette.waves[0].opacity(0)], startPoint: .top, endPoint: .bottom))
         }
+        .blur(radius: 10)
+        .overlay { Grain().blendMode(.overlay).opacity(0.3) }
+    }
+}
+
+/// The area under a sine wave: `height` is where the wave sits (0 top, 1 bottom), `swell` how far it rises and falls,
+/// both as shares of the view's height; `turns` is how many waves cross the width.
+private struct Wave: Shape {
+    let height: CGFloat
+    let swell: CGFloat
+    let turns: CGFloat
+    let phase: CGFloat
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let y = { (x: CGFloat) in rect.height * (height + swell * sin(x / rect.width * turns * 2 * .pi + phase)) }
+        path.move(to: CGPoint(x: -40, y: y(-40)))
+        for x in stride(from: -40, through: rect.width + 40, by: 8) { path.addLine(to: CGPoint(x: x, y: y(x))) }
+        path.addLine(to: CGPoint(x: rect.width + 40, y: rect.height * min(height + 0.38, 1.1)))
+        path.addLine(to: CGPoint(x: -40, y: rect.height * min(height + 0.38, 1.1)))
+        path.closeSubpath()
+        return path
     }
 }
 

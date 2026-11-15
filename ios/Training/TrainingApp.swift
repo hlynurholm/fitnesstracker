@@ -3,7 +3,7 @@ import SwiftUI
 @main
 struct TrainingApp: App {
     init() {
-        Theme.Typography.applyToNavigationBars()
+        Theme.Typography.applyToBars()
         LiveWorkout.endLeftovers()
         #if DEBUG
         HealthSync.selfCheck()
@@ -12,7 +12,7 @@ struct TrainingApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView().tint(Theme.Palette.accent).preferredColorScheme(.dark) // the stylized look is designed on charcoal
+            RootView().tint(Theme.Palette.accent).font(Theme.Typography.body).preferredColorScheme(.dark) // the stylized look is designed on charcoal
         }
     }
 }

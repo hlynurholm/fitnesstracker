@@ -36,8 +36,8 @@ enum Theme {
         static let butter = [hex(0xFFDF7A), hex(0xFF9F4A)]
         static let dusk = [hex(0x5B4BD6), hex(0xB56CF2)]
         static let coral = [hex(0xFF8F6B), hex(0xF2507A)]
-        /// Soft lights behind every screen.
-        static let glow = [hex(0x6C5CF2), hex(0xF2507A), hex(0xFF9F4A)]
+        /// The waves behind every screen: charcoal with a quiet blue, darkest first.
+        static let waves = [hex(0x15181F), hex(0x1B2433), hex(0x24344F)]
 
         private static func hex(_ value: UInt32) -> Color { Color(uiColor: UIColor(hex: value)) }
 
@@ -80,35 +80,43 @@ enum Theme {
     }
 
     enum Typography {
-        /// Typeface for headings, labels, buttons and numbers. Body text keeps the standard face for long reading.
-        /// Set to `.default` to turn the rounded look off everywhere, navigation titles included.
+        // Two faces. Headings are the system face in its condensed heavy cut, poster style. Everything else is the
+        // accessory face, Avenir Next, which ships with iOS. The standard system face is not used for text.
         static let headingDesign: Font.Design = .default
-        /// Headings are set narrow and heavy, poster style. `.standard` turns that off.
+        /// `.standard` turns the narrow headings off.
         static let headingWidth: Font.Width = .condensed
+        /// Family prefix of the accessory face: "AvenirNext" gives AvenirNext-Regular, -Medium, -DemiBold and -Bold.
+        static let accessory = "AvenirNext"
 
         static let screenTitle = Font.system(.largeTitle, design: headingDesign, weight: .heavy).width(headingWidth)
         static let title = Font.system(.title, design: headingDesign, weight: .heavy).width(headingWidth)
         static let headline = Font.system(.title3, design: headingDesign, weight: .heavy).width(headingWidth)
-        static let body = Font.system(.body)
-        static let callout = Font.system(.callout)
-        static let caption = Font.system(.footnote)
         static let label = Font.system(.caption, design: headingDesign, weight: .bold).width(headingWidth)
+        static let body = text("Regular", 17, .body)
+        static let callout = text("Regular", 16, .callout)
+        static let caption = text("Medium", 13, .footnote)
         /// Big numbers: tiles, timers.
-        static let numeral = Font.system(.title2, design: headingDesign, weight: .bold).monospacedDigit()
-        static let timer = Font.system(.largeTitle, design: headingDesign, weight: .bold).monospacedDigit()
+        static let numeral = text("Bold", 22, .title2).monospacedDigit()
+        static let timer = text("Bold", 34, .largeTitle).monospacedDigit()
 
-        /// Navigation bar titles are drawn by UIKit, so they get the heading typeface through the bar's appearance.
-        /// Call once at launch.
-        static func applyToNavigationBars() {
-            let bar = UINavigationBar.appearance()
-            bar.largeTitleTextAttributes = [.font: uiFont(.largeTitle, weight: .bold)]
-            bar.titleTextAttributes = [.font: uiFont(.headline, weight: .semibold)]
+        /// The accessory face at a size that still follows the reader's text size setting.
+        private static func text(_ weight: String, _ size: CGFloat, _ style: Font.TextStyle) -> Font {
+            .custom("\(accessory)-\(weight)", size: size, relativeTo: style)
         }
 
-        private static func uiFont(_ style: UIFont.TextStyle, weight: UIFont.Weight) -> UIFont {
-            let base = UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: style).pointSize, weight: weight)
-            guard headingDesign == .rounded, let rounded = base.fontDescriptor.withDesign(.rounded) else { return base }
-            return UIFont(descriptor: rounded, size: 0)
+        /// Navigation bar titles and tab bar labels are drawn by UIKit, so they get their typefaces through the bars'
+        /// appearance. Call once at launch.
+        static func applyToBars() {
+            let bar = UINavigationBar.appearance()
+            bar.largeTitleTextAttributes = [.font: heading(.largeTitle)]
+            bar.titleTextAttributes = [.font: heading(.title3)]
+            let tabs = [NSAttributedString.Key.font: UIFont(name: "\(accessory)-DemiBold", size: 10) ?? .systemFont(ofSize: 10, weight: .semibold)]
+            UITabBarItem.appearance().setTitleTextAttributes(tabs, for: .normal)
+            UITabBarItem.appearance().setTitleTextAttributes(tabs, for: .selected)
+        }
+
+        private static func heading(_ style: UIFont.TextStyle) -> UIFont {
+            .systemFont(ofSize: UIFont.preferredFont(forTextStyle: style).pointSize, weight: .heavy, width: headingWidth == .condensed ? .condensed : .standard)
         }
     }
 

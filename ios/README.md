@@ -42,6 +42,17 @@ To keep cues and the lock screen on time while the phone is locked, the interval
 (background mode `audio`). That is fine for a personal build and would not pass App Store review. The replacement is
 Live Activity push updates sent by the Worker.
 
+## Look
+
+Charcoal, with periwinkle, mint, butter and coral. Everything is set in `Shared/DesignSystem`:
+
+- `Theme.swift`: the palette, the two typefaces (headings are the system face in its condensed heavy cut; all other
+  text is Avenir Next, see `Typography.accessory`), radii and spacing. The app is dark only.
+- `Components.swift`: `Backdrop` (the waves of blue behind every screen, with `Grain`), `cardSurface` (cards are
+  dark Liquid Glass, or a grainy gradient when given a `fill`), `Badge`, `OpenGlyph`.
+- A view on a card of colour reads `\.onColor` from the environment and draws in the text colour instead of its
+  own tint. `CardKind.fill` in `HomeModel.swift` says which Home widgets are cards of colour.
+
 ## Runs
 
 `Features/Runs/RunScreen.swift` is the page for one run: the route on a map coloured by pace, with a marker at every kilometre and the totals along its top, then pace, heart rate

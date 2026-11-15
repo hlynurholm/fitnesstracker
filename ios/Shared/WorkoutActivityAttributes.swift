@@ -27,4 +27,8 @@ struct WorkoutActivityAttributes: ActivityAttributes {
     var name: String
     var isRun: Bool
     var startedAt: Date
+    /// The colour theme in use when the workout began (`ThemeKind`) and the colourful theme's hue. The lock screen
+    /// draws from these, because it runs outside the app and cannot read the app's settings.
+    var theme: String? = nil
+    var hue: Double? = nil
 }

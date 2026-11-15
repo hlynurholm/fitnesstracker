@@ -25,7 +25,7 @@ enum LiveWorkout {
         }
         end()
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        let attributes = WorkoutActivityAttributes(name: name, isRun: isRun, startedAt: startedAt)
+        let attributes = WorkoutActivityAttributes(name: name, isRun: isRun, startedAt: startedAt, theme: ThemeStore.shared.kind.rawValue, hue: ThemeStore.shared.hue)
         activity = try? Activity.request(attributes: attributes, content: .init(state: state, staleDate: nil))
     }
 

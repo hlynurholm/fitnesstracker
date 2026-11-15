@@ -10,12 +10,15 @@ struct TrainingWidgetsBundle: WidgetBundle {
 struct WorkoutLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
-            LockScreenView(attributes: context.attributes, state: context.state)
+            let look = Look(context.attributes, context.state.phase)
+            LockScreenView(attributes: context.attributes, state: context.state, look: look)
                 .padding(Theme.Space.l)
-                .activityBackgroundTint(Theme.Palette.surface)
-                .activitySystemActionForegroundColor(Theme.Palette.text)
+                // A card of grainy colour, like the session card in the app.
+                .background { GrainyGradient(colors: look.fill) }
+                .activityBackgroundTint(look.fill[1])
+                .activitySystemActionForegroundColor(look.ink)
         } dynamicIsland: { context in
-            let tint = context.state.phase.tint
+            let tint = Look(context.attributes, context.state.phase).tint
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Label(context.attributes.name, systemImage: context.attributes.icon)
@@ -50,45 +53,77 @@ struct WorkoutLiveActivity: Widget {
     }
 }
 
+/// The colours of the activity: the theme the workout was started in, and the phase it is in.
+private struct Look {
+    /// The card, top left to bottom right.
+    let fill: [Color]
+    /// Text on the card: black or white, whichever reads.
+    let ink: Color
+    /// The phase's colour on black, for the Dynamic Island.
+    let tint: Color
+
+    init(_ attributes: WorkoutActivityAttributes, _ phase: WorkoutActivityAttributes.Phase) {
+        let colors = ThemeColors.make(attributes.theme.flatMap(ThemeKind.init) ?? .dark, hue: attributes.hue ?? 0.6)
+        // Lifting is the main card colour; a run changes colour with its phase, so a glance says work or recover.
+        switch phase {
+        case .lift: fill = colors.fills[0]; tint = colors.accent
+        case .work: fill = colors.fills[3]; tint = colors.danger
+        case .recover, .cooldown: fill = colors.fills[2]; tint = colors.ok
+        case .warmup, .steady: fill = colors.fills[1]; tint = colors.warn
+        }
+        ink = Theme.Palette.on(fill[0])
+    }
+}
+
 private struct LockScreenView: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
+    let look: Look
 
     var body: some View {
+        let ink = look.ink, soft = look.ink.opacity(0.72)
+        // The big number is the countdown or the rest; the time since the start then sits small at the top. When the
+        // big number is itself the time since the start, it is not repeated.
+        let showsElapsed = state.countdown != nil || state.restSince != nil
         VStack(alignment: .leading, spacing: Theme.Space.s) {
-            HStack {
-                Label(attributes.name, systemImage: attributes.icon)
-                    .font(Theme.Typography.label).foregroundStyle(state.phase.tint)
+            HStack(spacing: Theme.Space.s) {
+                Label(attributes.name.uppercased(), systemImage: attributes.icon).font(Theme.Typography.label).foregroundStyle(ink)
                 Spacer()
-                Text(attributes.startedAt, style: .timer)
-                    .font(Theme.Typography.label).monospacedDigit().foregroundStyle(Theme.Palette.muted)
-                    .multilineTextAlignment(.trailing).frame(maxWidth: 80)
-            }
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(state.title).font(Theme.Typography.title).lineLimit(1).minimumScaleFactor(0.7)
-                    Text(state.detail).font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted).lineLimit(1)
+                if showsElapsed {
+                    Text(attributes.startedAt, style: .timer).font(Theme.Typography.label).monospacedDigit().foregroundStyle(soft)
+                        .multilineTextAlignment(.trailing).frame(maxWidth: 80)
+                } else {
+                    Text(state.progress.uppercased()).font(Theme.Typography.label).foregroundStyle(soft).lineLimit(1)
                 }
-                Spacer()
+            }
+            HStack(alignment: .center, spacing: Theme.Space.m) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(state.title.uppercased()).font(Theme.Typography.title).foregroundStyle(ink).lineLimit(1).minimumScaleFactor(0.6)
+                    // Shrinks before it is cut: "Set 1 of 4 · 122.5 kg × 4 reps" has to be readable whole.
+                    Text(state.detail).font(Theme.Typography.callout.weight(.medium)).foregroundStyle(soft).lineLimit(2).minimumScaleFactor(0.75)
+                }
+                Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 0) {
                     // On the dimmed always-on lock screen the system swaps the timer for text like "<1 minute": let it shrink, not truncate.
                     PhaseTimer(state: state, startedAt: attributes.startedAt)
-                        .font(Theme.Typography.timer).foregroundStyle(state.phase.tint)
+                        .font(Theme.Typography.timer).foregroundStyle(ink)
                         .lineLimit(1).minimumScaleFactor(0.4)
-                        .multilineTextAlignment(.trailing).frame(maxWidth: 130)
-                    Text(state.timerLabel).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+                        .multilineTextAlignment(.trailing).frame(maxWidth: 120)
+                    Text(state.timerLabel).font(Theme.Typography.label).foregroundStyle(soft)
                 }
             }
             if let range = state.countdown {
                 ProgressView(timerInterval: range, countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
-                    .tint(state.phase.tint)
+                    .tint(ink)
             }
-            HStack {
-                Text(state.progress)
-                Spacer()
-                if let target = state.target { Label(target, systemImage: "heart.fill") }
+            if showsElapsed || state.target != nil {
+                HStack {
+                    if showsElapsed { Text(state.progress) }
+                    Spacer()
+                    if let target = state.target { Label(target, systemImage: "heart.fill") }
+                }
+                .font(Theme.Typography.caption).foregroundStyle(soft)
             }
-            .font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
         }
     }
 }
@@ -116,16 +151,5 @@ private extension WorkoutActivityAttributes.ContentState {
     var timerLabel: String {
         if countdown != nil { return phase == .lift ? "HOLD" : "LEFT" }
         return restSince != nil ? "REST" : "ELAPSED"
-    }
-}
-
-private extension WorkoutActivityAttributes.Phase {
-    var tint: Color {
-        switch self {
-        case .lift: Theme.Palette.lift
-        case .work: Theme.Palette.danger
-        case .recover, .cooldown: Theme.Palette.ok
-        case .warmup, .steady: Theme.Palette.run
-        }
     }
 }

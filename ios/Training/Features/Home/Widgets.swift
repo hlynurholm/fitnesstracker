@@ -249,8 +249,9 @@ struct MetricCard: View {
     }
 }
 
-/// Overnight heart rate variability as dots on a line, over the range the watch calls balanced for him, so one look
-/// says whether it is where it should be.
+/// Heart rate variability the way Garmin's HRV status shows it: the 7 day average as dots on a line, over the range
+/// the watch calls balanced for him, so one look says whether it is where it should be. Single nights jump about
+/// far more than the average does, and the balanced range is defined for the average.
 struct HRVCard: View {
     let model: HomeModel
     let setting: CardSetting
@@ -258,9 +259,10 @@ struct HRVCard: View {
 
     var body: some View {
         let span = setting.span(wide: size.isWide), every = setting.every(wide: size.isWide)
-        let latest = model.latest("hrv.lastNightAvg")
-        let values = model.chart(span, every: every) { model.value("hrv.lastNightAvg", on: $0) }
-        // The watch's own balanced range for each night. Without one (an older import), the middle of his own nights.
+        let night = model.latest("hrv.lastNightAvg")
+        let latest = night.flatMap { n in model.hrvWeekly(on: n.date).map { (date: n.date, value: $0) } }
+        let values = model.chart(span, every: every) { model.hrvWeekly(on: $0) }
+        // The watch's own balanced range for each day. Without one (an older import), the middle of his own nights.
         let watchLow = model.chart(span, every: every) { model.value("hrv.baseline.balancedLow", on: $0) }
         let watchHigh = model.chart(span, every: every) { model.value("hrv.baseline.balancedUpper", on: $0) }
         let own = watchLow.allSatisfy { $0 == nil } ? HRVCard.usual(model.series("hrv.lastNightAvg", 28).compactMap { $0 }) : nil
@@ -268,11 +270,10 @@ struct HRVCard: View {
         let range = own ?? latest.flatMap { l in model.value("hrv.baseline.balancedLow", on: l.date).flatMap { lo in model.value("hrv.baseline.balancedUpper", on: l.date).map { (low: lo, high: $0) } } }
         let floor = latest.flatMap { model.value("hrv.baseline.lowUpper", on: $0.date) }
         let state: (text: String, color: Color)? = latest.flatMap { l in range.map { r in
-            l.value < (floor ?? -1) ? ("Low", Theme.Palette.danger) : l.value < r.low ? ("Below range", Theme.Palette.warn) : l.value > r.high ? ("Above range", Theme.Palette.warn) : ("In range", Theme.Palette.ok)
+            l.value < (floor ?? -1) ? ("Low", Theme.Palette.danger) : l.value < r.low ? ("Below range", Theme.Palette.warn) : l.value > r.high ? ("Above range", Theme.Palette.warn) : ("Balanced", Theme.Palette.ok)
         } }
         MetricWidget(kind: .hrv, size: size, value: latest.map { Fmt.whole($0.value) } ?? "–", unit: "ms",
-                     caption: [latest.flatMap { dayNote($0.date, today: model.today) }, range.map { "\(own == nil ? "healthy" : "usual") \(Fmt.whole($0.low))–\(Fmt.whole($0.high))" },
-                               model.average("hrv.lastNightAvg", setting.range ?? 7).map { "\(RangeOption.short(setting.range ?? 7)) avg \(Fmt.whole($0))" }],
+                     caption: ["7d avg", size.isWide ? night.map { "last night \(Fmt.whole($0.value))" } : nil, range.map { "\(own == nil ? "healthy" : "usual") \(Fmt.whole($0.low))–\(Fmt.whole($0.high))" }],
                      long: values.count > 45) {
             if let state { Text(state.text).font(Theme.Typography.label).foregroundStyle(state.color).lineLimit(1) }
         } chart: {

@@ -120,6 +120,12 @@ extension HomeModel {
         return nil
     }
 
+    /// Every theme with its facts, for the page behind the widget.
+    var factThemes: [(title: String, facts: [Fact])] {
+        [("Record days", extremes(best: true)), ("Last 7 days", lastSevenDays()), ("Best months", bestMonths()), ("All-time totals", totals()),
+         ("Best weekdays", bestWeekdays()), ("Off days", extremes(best: false)), ("Best weeks", bestWeeks()), ("Streaks and counts", streaks())].filter { !$0.1.isEmpty }.map { (title: $0.0, facts: $0.1) }
+    }
+
     /// Every day that has the metric, oldest first. Days of nothing (a watch left at home) are left out.
     private func points(_ metric: FunMetric, upTo last: String? = nil) -> [(date: String, value: Double)] {
         days.keys.sorted().compactMap { d in

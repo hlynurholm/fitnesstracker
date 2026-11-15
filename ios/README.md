@@ -94,6 +94,15 @@ each watch metric widget shows (`MetricSpec`, keyed by Garmin's field names) and
   touch that started editing does not also open its page.
 - The heading (`CardHeader`) is the same size and in the same place at every size. Quarter-height widgets are built
   with `CompactLines` and `StripLines`.
+- Tapping a widget opens its page (`WidgetDetail.swift`): the latest value, a large chart (`SeriesChart`) over a
+  range picked on the page, the figures that matter for that measure, the pattern through the week, and the other
+  values the watch stores in the same group. Steps, sleep, HRV, Body Battery, stress, calories, intensity minutes,
+  weight, nutrition, this week and fun facts each have a page of their own; the rest share `plain`. The session,
+  last run and watch data widgets open the day, the run and the full list instead.
+- HRV is read the way Garmin's HRV status reads it: the 7 day average (`HomeModel.hrvWeekly`), not single nights.
+  The balanced range from the watch is defined for that average.
+- In edit mode the widgets rock like the iOS home screen (`Wiggle`): the edge of every widget travels the same
+  short distance, each on its own rhythm, and the cards are drawn without live glass while they move.
 - Launch with `TRAINING_LAYOUT='[{"kind":"steps","wide":true,"size":"strip"}, ...]'` to look at an arrangement.
 - Every chart widget is built the same way: the number, the chart (`ValueAndChart`), then one line under it
   (`ChartCaption`) with short wording such as "goal 9,000 · 6m avg 8,601". Keep new widgets to that.

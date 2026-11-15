@@ -23,6 +23,7 @@ struct HomeScreen: View {
     @State private var openDay: String?
     @State private var openRun: Int?
     @State private var openAll = false
+    @State private var openDetail: CardKind?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -74,6 +75,7 @@ struct HomeScreen: View {
         .navigationDestination(item: $openDay) { DayScreen(date: $0) }
         .navigationDestination(item: $openRun) { RunScreen(id: $0) }
         .navigationDestination(isPresented: $openAll) { AllMetricsScreen(model: model) }
+        .navigationDestination(item: $openDetail) { WidgetDetailScreen(model: model, kind: $0) }
         .task { await model.load() }
         .refreshable { await model.load() }
         .onChange(of: scenePhase) { _, phase in if phase == .active, model.loaded { Task { await model.load() } } }
@@ -106,7 +108,7 @@ struct HomeScreen: View {
             .padding([.horizontal, .top], Theme.Space.l).padding(.bottom, size.rows == 1 ? Theme.Space.s : Theme.Space.l)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .clipped()
-            .cardSurface(fill: setting.kind.fill?.colors, lightFill: setting.kind.fill?.light ?? false)
+            .cardSurface(fill: setting.kind.fill?.colors, lightFill: setting.kind.fill?.light ?? false, glass: !editing)
             .contentShape(.dragPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
             .onGeometryChange(for: CGSize.self) { $0.size } action: { sizes[setting.kind] = $0 }
         if editing {
@@ -114,12 +116,16 @@ struct HomeScreen: View {
                 .opacity(dragging == setting.kind ? 0.4 : 1)
                 .overlay(alignment: .topLeading) { menuButton(setting) }
                 .overlay(alignment: .bottomTrailing) { resizeHandle(setting) }
-                .modifier(Wiggle())
+                .modifier(Wiggle(size: sizes[setting.kind] ?? .zero))
                 .onDrag { dragging = setting.kind; return NSItemProvider(object: setting.id as NSString) }
                 .onDrop(of: [.text], delegate: ReorderDrop(target: setting.kind, model: model, dragging: $dragging))
         } else {
             // Touch and hold any widget to start editing, as on the iOS home screen.
-            surface.simultaneousGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in startEditing() })
+            // A tap opens the widget's own page. (The session, last run and watch data widgets open theirs themselves.)
+            surface
+                .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                .onTapGesture { if !editing, setting.kind.hasPage { openDetail = setting.kind } }
+                .simultaneousGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in startEditing() })
         }
     }
 
@@ -248,15 +254,28 @@ private struct ReorderDrop: DropDelegate {
     func performDrop(info: DropInfo) -> Bool { dragging = nil; return true }
 }
 
-/// The small rocking motion of widgets in edit mode.
+/// The rocking of widgets in edit mode, after the iOS home screen: each widget turns a little about its centre and
+/// drifts a fraction of a point, on its own rhythm so that no two move together. The turn is sized so that the edge
+/// of every widget travels the same short distance, which means a large widget turns less than a small one.
 private struct Wiggle: ViewModifier {
-    @State private var on = false
+    let size: CGSize
+    @State private var phase = Double.random(in: 0..<1)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// How far the edge of a widget travels, in points.
+    private static let travel = 0.6
+
     func body(content: Content) -> some View {
-        content
-            .rotationEffect(.degrees(reduceMotion ? 0 : on ? 0.45 : -0.45))
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.16).repeatForever(autoreverses: true), value: on)
-            .onAppear { on = true }
+        if reduceMotion {
+            content
+        } else {
+            TimelineView(.animation) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                let angle = Self.travel / (Double(max(size.width, size.height, 80)) / 2)
+                content
+                    .rotationEffect(.radians(angle * sin((t / (0.27 + phase * 0.05) + phase) * 2 * .pi)))
+                    .offset(x: 0.35 * sin((t / 0.43 + phase) * 2 * .pi), y: 0.35 * cos((t / 0.39 + phase) * 2 * .pi))
+            }
+        }
     }
 }
 

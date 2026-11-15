@@ -311,6 +311,148 @@ enum ChartLabel {
     static func km(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v) }
 }
 
+/// The large chart of a detail page: one or more series over the same days, as bars (stacked when there are
+/// several), lines or dots, with an optional shaded range and goal line. Touch it to read a day.
+struct SeriesChart: View {
+    enum Style { case bars, line, dots }
+    struct Series: Identifiable {
+        /// Its name in the callout.
+        let id: String
+        let color: Color
+        var style: Style = .bars
+        /// One value per slot, nil where there is none.
+        let values: [Double?]
+    }
+    /// One unique key per day (or per group of days), oldest first.
+    let slots: [String]
+    let series: [Series]
+    var band: (low: [Double?], high: [Double?])? = nil
+    var goal: Double? = nil
+    var height: CGFloat = 230
+    /// A slot as it is written on the axis and in the callout.
+    let label: (String) -> String
+    let format: (Double) -> String
+    @State private var selection: String?
+
+    private var bars: [Series] { series.filter { $0.style == .bars } }
+
+    private var domain: ClosedRange<Double> {
+        var all = series.filter { $0.style != .bars }.flatMap { $0.values.compactMap { $0 } }
+        if let band { all += band.low.compactMap { $0 } + band.high.compactMap { $0 } }
+        if let goal { all.append(goal) }
+        if !bars.isEmpty {
+            all += slots.indices.map { i in bars.reduce(0.0) { $0 + ((i < $1.values.count ? $1.values[i] : nil) ?? 0) } }
+            all.append(0)
+        }
+        guard let lo = all.min(), let hi = all.max() else { return 0...1 }
+        let pad = max((hi - lo) * 0.12, 0.5)
+        return (bars.isEmpty ? lo - pad : 0)...(hi + pad)
+    }
+
+    /// Three or four round values across the range, for the grid lines and their labels.
+    private var ticks: [Double] {
+        let lo = domain.lowerBound, hi = domain.upperBound
+        let raw = (hi - lo) / 3.5
+        guard raw > 0 else { return [lo] }
+        let magnitude = pow(10, (log10(raw)).rounded(.down))
+        let step = ([1, 2, 2.5, 5, 10].first { $0 * magnitude >= raw } ?? 10) * magnitude
+        return Array(stride(from: (lo / step).rounded(.up) * step, through: hi, by: step))
+    }
+
+    private struct Mark: Identifiable { let id: String; let slot: String; let value: Double; let series: Series }
+    private var marks: [Mark] {
+        series.flatMap { s in
+            s.values.enumerated().compactMap { i, v -> Mark? in
+                guard let v, i < slots.count else { return nil }
+                return Mark(id: "\(s.id)\(i)", slot: slots[i], value: v, series: s)
+            }
+        }
+    }
+    private struct BandPoint: Identifiable { let id: String; let low: Double; let high: Double }
+    private var bandPoints: [BandPoint] {
+        guard let band else { return [] }
+        return slots.indices.compactMap { i in
+            guard i < band.low.count, i < band.high.count, let lo = band.low[i], let hi = band.high[i] else { return nil }
+            return BandPoint(id: slots[i], low: lo, high: hi)
+        }
+    }
+
+    var body: some View {
+        let dense = slots.count > 60
+        Chart {
+            ForEach(bandPoints) { b in
+                AreaMark(x: .value("Day", b.id), yStart: .value("Low", b.low), yEnd: .value("High", b.high))
+                    .foregroundStyle(Theme.Palette.ok.opacity(0.16)).interpolationMethod(.monotone)
+            }
+            ForEach(marks) { m in
+                if m.series.style == .bars {
+                    BarMark(x: .value("Day", m.slot), y: .value("Value", m.value), width: .ratio(dense ? 0.9 : 0.7))
+                        .clipShape(RoundedRectangle(cornerRadius: dense ? 0 : 2, style: .continuous))
+                        .foregroundStyle(m.series.color.opacity(selection == nil || selection == m.slot ? 1 : 0.4))
+                } else if m.series.style == .line {
+                    LineMark(x: .value("Day", m.slot), y: .value("Value", m.value), series: .value("Series", m.series.id))
+                        .foregroundStyle(m.series.color).lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)).interpolationMethod(.monotone)
+                } else {
+                    PointMark(x: .value("Day", m.slot), y: .value("Value", m.value)).symbolSize(dense ? 14 : 32).foregroundStyle(m.series.color)
+                }
+            }
+            // Each grid line carries its value, written just above its right end.
+            ForEach(ticks.dropFirst(bars.isEmpty ? 0 : 1), id: \.self) { tick in
+                RuleMark(y: .value("Value", tick)).foregroundStyle(.clear)
+                    .annotation(position: .top, alignment: .trailing, spacing: 1) {
+                        // A fixed colour: the secondary style would be taken relative to the invisible rule.
+                        Text(format(tick)).font(Theme.Typography.label).foregroundStyle(Color(uiColor: .secondaryLabel))
+                    }
+            }
+            if let goal {
+                RuleMark(y: .value("Goal", goal)).foregroundStyle(Theme.Palette.muted.opacity(0.7)).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 4]))
+            }
+            if let selection {
+                RuleMark(x: .value("Day", selection)).foregroundStyle(Theme.Palette.muted.opacity(0.45)).lineStyle(StrokeStyle(lineWidth: 1))
+                    .annotation(position: .top, spacing: Theme.Space.xs, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { callout(selection) }
+            }
+        }
+        .chartLegend(.hidden)
+        .chartXScale(domain: slots)
+        .chartYScale(domain: domain)
+        .chartXAxis {
+            // A label on about four of the slots, or on all of them when there are only a few.
+            let step = slots.count <= 8 ? 1 : max(1, slots.count / 4)
+            let ticks = Set(stride(from: slots.count - 1, through: 0, by: -step).map { slots[$0] })
+            AxisMarks { value in
+                if let slot = value.as(String.self), ticks.contains(slot) {
+                    AxisValueLabel(collisionResolution: .disabled) { Text(label(slot)).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted).fixedSize() }
+                }
+            }
+        }
+        .chartYAxis {
+            let ticks = self.ticks
+            AxisMarks(position: .trailing, values: ticks) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Theme.Palette.separator.opacity(Theme.ChartStyle.gridOpacity))
+            }
+        }
+        .chartXSelection(value: $selection)
+        .frame(height: height)
+    }
+
+    private func callout(_ slot: String) -> some View {
+        let i = slots.firstIndex(of: slot) ?? 0
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(label(slot)).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+            ForEach(series) { s in
+                if i < s.values.count, let v = s.values[i] {
+                    HStack(spacing: Theme.Space.xs) {
+                        Circle().fill(s.color).frame(width: 7, height: 7)
+                        Text(series.count > 1 ? "\(s.id) \(format(v))" : format(v)).font(Theme.Typography.callout.weight(.semibold).monospacedDigit())
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, Theme.Space.s).padding(.vertical, Theme.Space.xs)
+        .background(Theme.Palette.surfaceRaised, in: RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))
+    }
+}
+
 /// Tiny axis-free chart for dashboard cards: bars or a filled line, with gaps where a day has no value.
 struct Spark: View {
     enum Style { case bars, line }

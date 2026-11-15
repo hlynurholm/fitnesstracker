@@ -14,12 +14,15 @@ extension View {
     /// What a card is made of: dark glass that lets the lights behind the screen through, or, with `fill`, a grainy
     /// gradient of its own. `lightFill` says the fill is a light colour, so what sits on it turns dark.
     @ViewBuilder
-    func cardSurface(fill: [Color]? = nil, lightFill: Bool = false) -> some View {
+    func cardSurface(fill: [Color]? = nil, lightFill: Bool = false, glass: Bool = true) -> some View {
         let shape = RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
         if let fill {
             self.environment(\.onColor, true).environment(\.colorScheme, lightFill ? .light : .dark)
                 .background { GrainyGradient(colors: fill).clipShape(shape) }
                 .overlay { shape.strokeBorder(.white.opacity(0.18), lineWidth: 1) }
+        } else if !glass {
+            // A plain sheet of the same colour: live glass shimmers when it is moved, which reads as extra motion.
+            self.background(Theme.Palette.surface.opacity(0.94), in: shape).overlay { shape.strokeBorder(Theme.Palette.separator.opacity(0.35), lineWidth: 1) }
         } else if #available(iOS 26.0, *) {
             self.glassEffect(.regular.tint(Theme.Palette.surface.opacity(0.55)), in: shape)
         } else {

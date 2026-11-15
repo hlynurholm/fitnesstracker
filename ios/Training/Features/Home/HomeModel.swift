@@ -65,6 +65,9 @@ enum CardKind: String, CaseIterable, Codable {
     /// Cards that only make sense across the full width.
     var alwaysWide: Bool { self == .facts || self == .all }
 
+    /// Widgets whose tap opens `WidgetDetailScreen`. The others open a page of their own: the day, the run, the list.
+    var hasPage: Bool { ![.today, .lastRun, .all].contains(self) }
+
     /// Cards with a chart over time, whose range of days can be chosen.
     var hasRange: Bool { ![.today, .lastRun, .week, .facts, .all].contains(self) }
 }
@@ -307,6 +310,15 @@ final class HomeModel {
         }
         return out.reversed()
     }
+
+    /// The average of a metric over the `count` days ending on `date`. nil with fewer than three days to go on.
+    func rolling(_ key: String, endingOn date: String, days count: Int = 7) -> Double? {
+        let v = (0..<count).compactMap { value(key, on: Day.add(date, -$0)) }
+        return v.count >= 3 ? v.reduce(0, +) / Double(v.count) : nil
+    }
+
+    /// Heart rate variability the way Garmin's HRV status reads it: the 7 day average, not a single night.
+    func hrvWeekly(on date: String) -> Double? { value("hrv.weeklyAvg", on: date) ?? rolling("hrv.lastNightAvg", endingOn: date) }
 
     func average(_ key: String, _ count: Int) -> Double? {
         let v = series(key, count).compactMap { $0 }

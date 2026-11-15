@@ -71,13 +71,10 @@ The main value of a widget or tile, a number or a name, is `Typography.numeral` 
 
 `Features/Runs/RunScreen.swift` is the page for one run: the route on a map coloured by pace, with a marker at every kilometre and the totals along its top, then pace, heart rate
 and elevation over distance, splits and heart rate zones. It opens from the Last run widget, the recent runs list in
-Progress. The same content (`RunDetail`) also sits inside the day it was recorded on, from `recorded` in the day
-response, so a run shows in full on its day even when that day's session is a lift. There the map does not pan or
-zoom, so a drag scrolls the day; "Open" leads to the run page. Dragging along the strip under the map, or tapping the route, moves a point along
-it and the top of the map shows distance, time, pace, heart rate and height there. Touching and holding the map opens a menu for what
-the strip draws (elevation, pace or heart rate) and for the map (standard, satellite or hybrid, in 2D or 3D). A
-choice is kept for that run (`MapChoice`); runs without one follow the defaults in Settings, Maps. The route comes from `lat`/`lon` in the activity's track; activities imported
-before the track kept positions get them filled in from the stored file the first time they are opened.
+Progress and "Open run" on the day it was recorded. On that day the run is shown in brief (`RunSummary`: a map and
+four numbers), inside the session card on a running day, where it replaces the description of what was planned, and
+as a card of its own on other days. Maps inside a scrolling page (`fixed`) zoom, turn and tilt with two fingers; one
+finger scrolls the page. Today has a Sync button that calls `POST /api/garmin/sync` and reloads the day.
 
 ## Dashboard
 
@@ -89,10 +86,14 @@ each watch metric widget shows (`MetricSpec`, keyed by Garmin's field names) and
   `WidgetGrid` places them in two columns of quarter-height rows. A widget shows more as it grows: name and number
   at quarter height, a chart from half height (`MetricWidget`), and at 1 × 1 the lowest, average and highest, the
   session's lifts (`SessionCard`) or the whole run map (`LastRunCard`).
-- Touch and hold a widget: size, range of days (2 days to 6 months), resolution, chart type, "use this range and
-  resolution for all widgets" (asks twice), remove.
-- "Edit Home" at the bottom of the page: drag a widget to move it, tap the size badge in its corner for the next
-  size, tap the minus to remove it, "Add widget" to bring one back.
+- Editing works like the iOS home screen. Touch and hold any widget (or tap "Edit Home" at the bottom of the page)
+  and the widgets wiggle: drag one to move it, drag the thick line round its bottom right corner to resize it (it
+  snaps to the nearest of the five sizes), and tap the button in its top left corner for its settings: size, range of
+  days (2 days to 6 months), resolution, chart type, "use this range and resolution for all widgets" (asks twice)
+  and remove. "Add widget" and "Done" sit above the tab bar. A widget's own tap action checks `editing`, so the
+  touch that started editing does not also open its page.
+- The heading (`CardHeader`) is the same size and in the same place at every size. Quarter-height widgets are built
+  with `CompactLines` and `StripLines`.
 - Launch with `TRAINING_LAYOUT='[{"kind":"steps","wide":true,"size":"strip"}, ...]'` to look at an arrangement.
 - Every chart widget is built the same way: the number, the chart (`ValueAndChart`), then one line under it
   (`ChartCaption`) with short wording such as "goal 9,000 · 6m avg 8,601". Keep new widgets to that.

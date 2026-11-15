@@ -14,16 +14,23 @@ struct RunBody: View {
     var body: some View {
         let t = model.template, p = model.program, zones = p.heartRate.zones
         VStack(alignment: .leading, spacing: Theme.Space.m) {
-            if let d = t.detail { Text(d).font(Theme.Typography.callout) }
-            if t.easy == true, let easy = zones.first { Banner("Keep heart rate under \(easy.to). Pace is a guide only.", tone: .accent) }
-            if t.timeTrial == true {
-                let target = AppModel.shared.settings.number("five_k_target_sec") ?? p.running.fiveKTargetSec
-                Banner("Target by week 16: under \(Fmt.time(target)) (\(Fmt.pace(target / 5))), stretch \(Fmt.time(p.running.fiveKStretchSec)).", tone: .accent)
-            }
-            if t.kind == "run" {
-                HeartRateZones(heartRate: p.heartRate, highlight: t.easy == true ? [0] : t.intervals != nil ? [2, 3] : [])
-                if let c = p.running.cadenceNote { Text(c).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
-                timer(t, zones)
+            let recorded = model.data?.recorded ?? []
+            if recorded.isEmpty {
+                if let d = t.detail { Text(d).font(Theme.Typography.callout) }
+                if t.easy == true, let easy = zones.first { Banner("Keep heart rate under \(easy.to). Pace is a guide only.", tone: .accent) }
+                if t.timeTrial == true {
+                    let target = AppModel.shared.settings.number("five_k_target_sec") ?? p.running.fiveKTargetSec
+                    Banner("Target by week 16: under \(Fmt.time(target)) (\(Fmt.pace(target / 5))), stretch \(Fmt.time(p.running.fiveKStretchSec)).", tone: .accent)
+                }
+                if t.kind == "run" {
+                    HeartRateZones(heartRate: p.heartRate, highlight: t.easy == true ? [0] : t.intervals != nil ? [2, 3] : [])
+                    if let c = p.running.cadenceNote { Text(c).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
+                    timer(t, zones)
+                }
+            } else {
+                // Once the watch's recording is in, what was planned gives way to what was done.
+                ForEach(recorded) { RunSummary(id: $0.id) }
+                if let d = t.detail { Text("Planned: \(d)").font(Theme.Typography.caption).muted() }
             }
             HStack(spacing: Theme.Space.s) {
                 LabeledField(label: "Distance (km)") { TextField(t.timeTrial == true ? "5.00" : "km", text: $distance).keyboardType(.decimalPad) }

@@ -102,7 +102,7 @@ struct ChartCaption: View {
     }
 }
 
-/// The two lines of a quarter-height widget: its name over its value, sitting in the middle of the row.
+/// A quarter-height widget: the same heading as every other size, in the same place, with the value under it.
 struct CompactLines<Trailing: View>: View {
     let kind: CardKind
     var title: String? = nil
@@ -110,16 +110,16 @@ struct CompactLines<Trailing: View>: View {
     var unit = ""
     @ViewBuilder var trailing: Trailing
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.xs) {
-            CardHeader(kind: kind, title: title, compact: true) { trailing }
-            BigValue(value: value, unit: unit, compact: true)
+        VStack(alignment: .leading, spacing: 0) {
+            CardHeader(kind: kind, title: title) { trailing }
+            BigValue(value: value, unit: unit, compact: true).frame(height: 28)
         }
-        .frame(maxHeight: .infinity)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 
-/// A 1 × ¼ widget: name and value on the left; on the right a note over the caption, on the same two lines, and
-/// then room for a small picture.
+/// A 1 × ¼ widget: heading and value on the left; on the right a note level with the heading and the caption level
+/// with the value, and then room for a small picture.
 struct StripLines<Note: View, Picture: View>: View {
     let kind: CardKind
     var title: String? = nil
@@ -129,15 +129,15 @@ struct StripLines<Note: View, Picture: View>: View {
     @ViewBuilder var note: Note
     @ViewBuilder var picture: Picture
     var body: some View {
-        HStack(alignment: .center, spacing: Theme.Space.m) {
+        HStack(alignment: .top, spacing: Theme.Space.m) {
             CompactLines(kind: kind, title: title, value: value, unit: unit) { EmptyView() }.fixedSize(horizontal: true, vertical: false)
-            VStack(alignment: .trailing, spacing: Theme.Space.xs) {
-                note.frame(height: 16)
-                ChartCaption(caption, trailing: true).frame(height: 28, alignment: .bottom)
+            VStack(alignment: .trailing, spacing: 0) {
+                HStack { Spacer(minLength: 0); note }.frame(height: 26)
+                ChartCaption(caption, trailing: true).frame(height: 28)
             }
-            picture
+            picture.frame(height: 54)
         }
-        .frame(maxHeight: .infinity)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -462,7 +462,7 @@ struct LastRunCard: View {
                         BigValue(value: km, unit: "km")
                         ChartCaption(facts)
                     } else {
-                        RouteMap(route: route, activity: run, fixed: true, height: nil)
+                        RouteMap(route: route, activity: run, fixed: true, menu: false, height: nil)
                     }
                 }
             } else {
@@ -473,7 +473,7 @@ struct LastRunCard: View {
                             CompactLines(kind: .lastRun, value: km, unit: "km") { EmptyView() }
                         case .strip:
                             StripLines(kind: .lastRun, value: km, unit: "km", caption: facts.prefix(2).map { $0 }) { Text(Day.label(run.day)).font(Theme.Typography.label).muted() } picture: {
-                                if !route.isEmpty { RouteSketch(route: route, lineWidth: 2.5).frame(width: 64, height: 44) }
+                                if !route.isEmpty { RouteSketch(route: route, lineWidth: 2.5).frame(width: 64) }
                             }
                         case .square:
                             VStack(alignment: .leading, spacing: Theme.Space.s) {
@@ -515,9 +515,9 @@ struct WeekCard: View {
         case .small:
             CompactLines(kind: .week, value: "\(count)", unit: "done") { EmptyView() }
         case .strip:
-            HStack(spacing: Theme.Space.m) {
+            HStack(alignment: .top, spacing: Theme.Space.m) {
                 CompactLines(kind: .week, value: "\(count)", unit: "done") { EmptyView() }.fixedSize(horizontal: true, vertical: false)
-                days(monday, done, circle: 24, labels: true)
+                days(monday, done, circle: 24, labels: true).frame(height: 54)
             }
         case .square:
             VStack(alignment: .leading, spacing: Theme.Space.s) {
@@ -742,10 +742,11 @@ struct FactLine: View {
 struct AllMetricsCard: View {
     let model: HomeModel
     let size: WidgetSize
+    let open: () -> Void
     var body: some View {
         let date = model.days.keys.max() ?? model.today
         let count = model.days[date]?.count ?? 0
-        NavigationLink { AllMetricsScreen(model: model) } label: {
+        Button(action: open) {
             Group {
                 switch size {
                 case .small: CompactLines(kind: .all, title: "Watch data", value: "\(count)", unit: "values") { EmptyView() }

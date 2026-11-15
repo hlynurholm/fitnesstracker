@@ -41,6 +41,7 @@ private struct DayContent: View {
     let go: (String) -> Void
     @State private var showChange = false
     @State private var showCalendar = false
+    @State private var syncing = false
     @State private var showFinish = false
     @State private var confirmDelete = false
     @Environment(\.scenePhase) private var scenePhase
@@ -54,9 +55,15 @@ private struct DayContent: View {
                 // day back or forward.
                 HStack(spacing: Theme.Space.s) {
                     Button { withAnimation(.snappy) { showCalendar.toggle() } } label: {
-                        Label(showCalendar ? "Hide calendar" : "Calendar", systemImage: showCalendar ? "chevron.up" : "calendar").font(Theme.Typography.label)
+                        Label(showCalendar ? "Close" : "Calendar", systemImage: showCalendar ? "chevron.up" : "calendar").font(Theme.Typography.label)
                             .padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
                     }
+                    // Fetches from Garmin now, instead of waiting for the server's half-hourly check.
+                    Button { Task { await sync() } } label: {
+                        Label(syncing ? "Syncing" : "Sync", systemImage: "arrow.triangle.2.circlepath").font(Theme.Typography.label)
+                            .padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
+                    }
+                    .disabled(syncing).accessibilityHint("Fetches new workouts from Garmin")
                     Spacer(minLength: 0)
                     if selected != Day.today() {
                         Button { go(Day.today()) } label: { Text("Today").font(Theme.Typography.label).padding(.horizontal, Theme.Space.m).frame(height: 36).glass() }
@@ -75,12 +82,10 @@ private struct DayContent: View {
                     if API.shared.offline { Banner("Offline: showing the last saved copy of this day. New entries are saved on the phone and synced later.") }
                     header(day)
                     WeightCard(model: model)
-                    // What the watch recorded, in full: map, charts, splits and zones. It leads the day once the
-                    // session is done or was the run itself, and follows the session while that is still being logged.
-                    let runFirst = model.template.kind == "run" || model.workout?.status == "done"
-                    if runFirst { recorded }
+                    // A run recorded on a lifting or rest day gets a card of its own. On a running day it is part of
+                    // the session card.
+                    if !["run", "other"].contains(model.template.kind) { ForEach(model.data?.recorded ?? []) { RunSummary(id: $0.id).card() } }
                     session(day)
-                    if !runFirst { recorded }
                     others
                     if day.testWeek { TestsCard(model: model) }
                     if model.template.kind != "lift" { ChecklistCard(model: model, block: "knee", title: model.program.kneeRoutine.title, note: (model.program.kneeRoutine.note ?? "") + (model.template.kind == "run" ? " Optional after the run." : ""), items: model.program.kneeRoutine.items.map { .init(id: $0.id, text: $0.text) }) }
@@ -213,8 +218,14 @@ private struct DayContent: View {
         .card()
     }
 
-    private var recorded: some View {
-        ForEach(model.data?.recorded ?? []) { RunDetail(id: $0.id, embedded: true) }
+    private func sync() async {
+        syncing = true
+        defer { syncing = false }
+        do {
+            let r: GarminSyncResult = try await API.shared.send("POST", "/api/garmin/sync")
+            await model.load()
+            model.toast = r.error ?? (r.imported.isEmpty ? "Nothing new from Garmin" : "Fetched \(r.imported.count) new from Garmin")
+        } catch { model.toast = error.localizedDescription }
     }
 
     @ViewBuilder

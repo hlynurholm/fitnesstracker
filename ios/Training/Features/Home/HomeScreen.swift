@@ -2,9 +2,9 @@ import SwiftUI
 
 /// The landing page: a grid of data widgets from the watch and from training.
 ///
-/// Normal mode: touch and hold a widget for its settings (size, range of days shown, remove).
-/// Edit mode (the Edit Home button at the bottom of the page): widgets can be dragged to a new place, resized with the handle in their bottom
-/// right corner, removed with the minus in their top left corner, and added with the plus button.
+/// Edit mode (touch and hold a widget, or the Edit Home button at the bottom of the page): widgets wiggle, and can
+/// be dragged to a new place, resized by dragging the line round their bottom right corner, and set up or removed
+/// from the button in their top left corner. Widgets are added back with the Add widget button.
 /// The layout is saved on the phone.
 struct HomeScreen: View {
     let openToday: () -> Void
@@ -12,22 +12,29 @@ struct HomeScreen: View {
     @State private var editing = false
     @State private var adding = false
     @State private var dragging: CardKind?
+    /// For resizing by the corner: the grid's width, each widget's size on screen, and the size of the widget being
+    /// resized as it was when the drag began.
+    @State private var gridWidth: CGFloat = 0
+    @State private var sizes: [CardKind: CGSize] = [:]
+    @State private var resizeStart: CGSize?
     /// "Use this range for all widgets" asks twice: first this dialog, then an alert.
     @State private var askApply: ApplyAll?
     @State private var confirmApply: ApplyAll?
     @State private var openDay: String?
     @State private var openRun: Int?
+    @State private var openAll = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Screen(title: "Home") {
-            Text(editing ? "Drag to move. Use the corner handle to resize." : Day.label(model.today, year: true))
+            Text(editing ? "Drag a widget to move it, or its corner to resize it. The button in its top left corner has its settings." : Day.label(model.today, year: true))
                 .font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted).padding(.horizontal, Theme.Space.xs)
             if let error = model.error, model.dash == nil { ErrorCard(message: error) { await model.load() } }
             if model.loaded, !model.hasWatchData, !editing { waiting }
             WidgetGrid(spacing: Theme.Space.m) {
                 ForEach(model.visible) { setting in card(setting).layoutValue(key: WidgetSizeKey.self, value: setting.shape) }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
             if !model.loaded { ProgressView().frame(maxWidth: .infinity).padding(.top, 60) }
             // Editing starts from the very end of the page, out of the way.
             if model.loaded, !editing {
@@ -66,6 +73,7 @@ struct HomeScreen: View {
         }
         .navigationDestination(item: $openDay) { DayScreen(date: $0) }
         .navigationDestination(item: $openRun) { RunScreen(id: $0) }
+        .navigationDestination(isPresented: $openAll) { AllMetricsScreen(model: model) }
         .task { await model.load() }
         .refreshable { await model.load() }
         .onChange(of: scenePhase) { _, phase in if phase == .active, model.loaded { Task { await model.load() } } }
@@ -94,30 +102,33 @@ struct HomeScreen: View {
         let size = setting.shape
         let surface = content(setting, size: size)
             .allowsHitTesting(!editing) // while editing, touches move and resize the widget instead
-            .padding(.horizontal, Theme.Space.l).padding(.vertical, size.rows == 1 ? Theme.Space.s : Theme.Space.l)
+            // The heading sits in the same place at every size; a quarter-height widget only has less room below it.
+            .padding([.horizontal, .top], Theme.Space.l).padding(.bottom, size.rows == 1 ? Theme.Space.s : Theme.Space.l)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .clipped()
             .cardSurface(fill: setting.kind.fill?.colors, lightFill: setting.kind.fill?.light ?? false)
             .contentShape(.dragPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { sizes[setting.kind] = $0 }
         if editing {
             surface
                 .opacity(dragging == setting.kind ? 0.4 : 1)
-                .overlay(alignment: .topLeading) { removeButton(setting) }
+                .overlay(alignment: .topLeading) { menuButton(setting) }
                 .overlay(alignment: .bottomTrailing) { resizeHandle(setting) }
                 .modifier(Wiggle())
                 .onDrag { dragging = setting.kind; return NSItemProvider(object: setting.id as NSString) }
                 .onDrop(of: [.text], delegate: ReorderDrop(target: setting.kind, model: model, dragging: $dragging))
         } else {
-            surface.contextMenu { menu(setting) }
+            // Touch and hold any widget to start editing, as on the iOS home screen.
+            surface.simultaneousGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in startEditing() })
         }
     }
 
     @ViewBuilder
     private func content(_ setting: CardSetting, size: WidgetSize) -> some View {
         switch setting.kind {
-        case .today: SessionCard(model: model, size: size) { date in if date == model.today { openToday() } else { openDay = date } }
-        case .lastRun: LastRunCard(model: model, size: size) { openRun = $0 }
+        // A touch that was held long enough to start editing must not also open the widget's page when it lifts.
+        case .today: SessionCard(model: model, size: size) { date in if !editing { if date == model.today { openToday() } else { openDay = date } } }
+        case .lastRun: LastRunCard(model: model, size: size) { if !editing { openRun = $0 } }
         case .week: WeekCard(model: model, size: size)
         case .weight: WeightWidget(model: model, setting: setting, size: size)
         case .nutrition: NutritionCard(model: model, setting: setting, size: size)
@@ -125,40 +136,53 @@ struct HomeScreen: View {
         case .intensity: IntensityCard(model: model, setting: setting, size: size)
         case .hrv: HRVCard(model: model, setting: setting, size: size)
         case .facts: FactsCard(model: model, size: size)
-        case .all: AllMetricsCard(model: model, size: size)
+        case .all: AllMetricsCard(model: model, size: size) { if !editing { openAll = true } }
         default: if let spec = MetricSpec.all[setting.kind] { MetricCard(model: model, setting: setting, spec: spec, size: size) }
         }
     }
 
-    /// Minus in the top left corner: takes the widget off the dashboard. It can be added back with the plus button.
-    private func removeButton(_ setting: CardSetting) -> some View {
-        Button { withAnimation(.snappy) { model.update(setting.kind) { $0.hidden = true } } } label: {
-            Image(systemName: "minus").font(.caption.weight(.heavy)).foregroundStyle(.white)
-                .frame(width: 26, height: 26).background(Theme.Palette.rest, in: Circle())
+    /// Button in the top left corner while editing: opens the widget's settings (size, range, resolution, chart, remove).
+    private func menuButton(_ setting: CardSetting) -> some View {
+        Menu { menu(setting) } label: {
+            Image(systemName: "ellipsis").font(.caption.weight(.heavy)).foregroundStyle(Theme.Palette.background)
+                .frame(width: 28, height: 28).background(Theme.Palette.text, in: Circle())
                 .overlay(Circle().stroke(Theme.Palette.background, lineWidth: 2))
                 .padding(8).contentShape(Rectangle())
         }
-        .buttonStyle(.plain).offset(x: -14, y: -14)
-        .accessibilityLabel("Remove \(setting.kind.title)")
+        .offset(x: -14, y: -14)
+        .accessibilityLabel("Settings for \(setting.kind.title)")
     }
 
-    /// Handle in the bottom right corner: each tap gives the widget the next of the five sizes.
+    /// Thick line round the bottom right corner while editing. Dragging it resizes the widget: it takes whichever of
+    /// the five sizes is nearest to where the corner has been pulled.
     private func resizeHandle(_ setting: CardSetting) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            withAnimation(.snappy) { model.update(setting.kind) { $0.size = setting.shape.next; $0.wide = setting.shape.next.isWide } }
-        } label: {
-            Text(setting.shape.label).font(Theme.Typography.label).foregroundStyle(Theme.Palette.onAccent)
-                .padding(.horizontal, Theme.Space.s).frame(height: 30).background(Theme.Palette.accent, in: Capsule())
-                .overlay(Capsule().stroke(Theme.Palette.background, lineWidth: 2))
-                .padding(8).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .offset(x: 12, y: 12)
-        .accessibilityLabel("Size of \(setting.kind.title): \(setting.shape.label). Tap for the next size.")
+        let radius = Theme.Radius.card
+        return Path { $0.addArc(center: CGPoint(x: 44 - radius, y: 44 - radius), radius: radius - 8, startAngle: .degrees(6), endAngle: .degrees(84), clockwise: false) }
+            .stroke(Theme.Palette.text.opacity(0.9), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+            .highPriorityGesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                .onChanged { drag in
+                    let start = resizeStart ?? sizes[setting.kind] ?? .zero
+                    if resizeStart == nil { resizeStart = start }
+                    let spacing = Theme.Space.m, quarter = (gridWidth - 3 * spacing) / 4
+                    let wide = start.width + drag.translation.width > gridWidth * 0.75
+                    let rows = (start.height + drag.translation.height + spacing) / (quarter + spacing)
+                    let choices: [WidgetSize] = wide ? [.strip, .wide, .large] : [.small, .square]
+                    guard gridWidth > 0, let size = choices.min(by: { abs(Double($0.rows) - rows) < abs(Double($1.rows) - rows) }), size != setting.shape else { return }
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.snappy) { model.update(setting.kind) { $0.size = size; $0.wide = size.isWide } }
+                }
+                .onEnded { _ in resizeStart = nil })
+            .accessibilityLabel("Resize \(setting.kind.title), now \(setting.shape.label)")
+            .accessibilityAdjustableAction { direction in
+                let all = WidgetSize.allCases, i = all.firstIndex(of: setting.shape) ?? 0
+                let size = all[min(max(i + (direction == .increment ? 1 : -1), 0), all.count - 1)]
+                model.update(setting.kind) { $0.size = size; $0.wide = size.isWide }
+            }
     }
 
-    /// Settings for one widget, on touch and hold.
+    /// Settings for one widget, behind the button in its top left corner while editing.
     @ViewBuilder
     private func menu(_ setting: CardSetting) -> some View {
         let wide = setting.shape.isWide
@@ -198,7 +222,6 @@ struct HomeScreen: View {
             Button { askApply = ApplyAll(range: span, every: every) } label: { Label("Use this range and resolution for all widgets", systemImage: "square.on.square") }
         }
         Divider()
-        Button { startEditing() } label: { Label("Edit dashboard", systemImage: "square.grid.2x2") }
         Button(role: .destructive) { withAnimation(.snappy) { model.update(setting.kind) { $0.hidden = true } } } label: { Label("Remove widget", systemImage: "minus.circle") }
     }
 }

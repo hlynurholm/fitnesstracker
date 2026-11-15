@@ -49,7 +49,7 @@ struct RunRoute {
     func region(tall: Double) -> MKCoordinateRegion {
         var r = region
         r.span.latitudeDelta *= tall
-        r.center.latitude -= r.span.latitudeDelta * 0.04
+        if tall > 1 { r.center.latitude -= r.span.latitudeDelta * 0.04 }
         return r
     }
 
@@ -103,13 +103,36 @@ struct RunScreen: View {
     }
 }
 
+/// A run in brief, for the day it was recorded on: the route on a map that can be zoomed and tilted, the headline
+/// numbers, and the way in to the whole run.
+struct RunSummary: View {
+    let id: Int
+    @State private var activity: GarminActivity?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            if let a = activity {
+                let route = RunRoute(a.track ?? [])
+                if !route.isEmpty { RouteMap(route: route, activity: a, fixed: true, panels: false, height: 220) }
+                StatRow(items: [("Distance", a.distance_m.map { String(format: "%.2f km", $0 / 1000) } ?? "–"), ("Time", a.duration_s.map { Fmt.time($0) } ?? "–"),
+                                ("Pace", a.avg_pace_s_per_km.map { Fmt.time($0) } ?? "–"), ("Heart", a.avg_hr.map { "\(Int($0))" } ?? "–")])
+                NavigationLink { RunScreen(id: id) } label: {
+                    Text("Open run").font(Theme.Typography.label).foregroundStyle(Theme.Palette.text).padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Charts, splits and heart rate zones")
+            } else {
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Space.xl)
+            }
+        }
+        .task(id: id) { activity = try? await API.shared.get("/api/activities/\(id)", cache: true) }
+    }
+}
+
 /// One run as a column of cards: the route on a map coloured by pace, the headline numbers, pace, heart rate and
-/// elevation over the distance, the kilometre splits and the time in each heart rate zone. It is the run page, and
-/// it also sits inside the day the run was recorded on.
+/// elevation over the distance, the kilometre splits and the time in each heart rate zone.
 struct RunDetail: View {
     let id: Int
-    /// Inside another scrolling page: the map stays put so a drag scrolls the page, and the heading opens the run page.
-    var embedded = false
     var loaded: (GarminActivity) -> Void = { _ in }
     @State private var activity: GarminActivity?
     @State private var error: String?
@@ -119,22 +142,8 @@ struct RunDetail: View {
             if let a = activity {
                 let track = a.track ?? []
                 let route = RunRoute(track)
-                if !route.isEmpty { RouteMap(route: route, activity: a, fixed: embedded) }
-                if embedded {
-                    NavigationLink { RunScreen(id: id) } label: {
-                        HStack {
-                            headline(a)
-                            Spacer(minLength: Theme.Space.s)
-                            Text("Open").font(Theme.Typography.label)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .foregroundStyle(Theme.Palette.accent)
-                    .padding(.trailing, Theme.Space.xs)
-                    .accessibilityHint("Opens the run with a map you can move and zoom")
-                } else {
-                    headline(a)
-                }
+                if !route.isEmpty { RouteMap(route: route, activity: a) }
+                headline(a)
                 tiles(a)
                 profiles(a, track)
                 splits(a)
@@ -291,8 +300,13 @@ struct RunDetail: View {
 struct RouteMap: View {
     let route: RunRoute
     let activity: GarminActivity
-    /// No panning or zooming, for a map inside a page that scrolls.
+    /// Inside a page that scrolls: the map can be zoomed, turned and tilted with two fingers, but one finger scrolls
+    /// the page instead of moving the map.
     var fixed = false
+    /// The numbers along the top and the strip along the bottom.
+    var panels = true
+    /// Touch and hold opens the graph and map options. Off on Home, where touch and hold starts editing.
+    var menu = true
     /// nil lets the map fill the height it is given, and leaves out the line of help under it (for a widget).
     var height: CGFloat? = 420
     @State private var picked: Int?
@@ -315,7 +329,7 @@ struct RouteMap: View {
     /// The whole route from straight above, or from an angle in 3D.
     private var camera: MapCameraPosition {
         let region = route.region
-        guard threeD else { return .region(route.region(tall: height == nil ? 2.4 : 1.7)) }
+        guard threeD else { return .region(route.region(tall: !panels ? 1 : height == nil ? 2.4 : 1.7)) }
         let metres = max(region.span.latitudeDelta, region.span.longitudeDelta * cos(region.center.latitude * .pi / 180)) * 111_000
         return .camera(MapCamera(centerCoordinate: region.center, distance: metres * 2.4, heading: 0, pitch: 55))
     }
@@ -323,7 +337,7 @@ struct RouteMap: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             MapReader { proxy in
-                Map(position: $position, interactionModes: fixed ? [] : [.pan, .zoom, .rotate, .pitch]) {
+                Map(position: $position, interactionModes: fixed ? [.zoom, .rotate, .pitch] : .all) {
                     // A light casing under the coloured line keeps the route readable on any map.
                     MapPolyline(coordinates: route.points.map(\.coordinate))
                         .stroke(.white.opacity(0.95), style: StrokeStyle(lineWidth: 9, lineCap: .round, lineJoin: .round))
@@ -353,20 +367,20 @@ struct RouteMap: View {
                     }
                 }
                 .mapStyle(style)
-                .onTapGesture { picked = nearest(to: $0, proxy) } // a tap off the route clears the point
+                .onTapGesture { if panels { picked = nearest(to: $0, proxy) } } // a tap off the route clears the point
                 // The map runs on below its frame, which puts the map maker's mark out of sight.
                 .padding(.bottom, -40)
             }
             .frame(height: height)
             // The numbers and the strip float on the map as two pieces of glass.
-            .overlay(alignment: .top) { readout.padding(Theme.Space.s) }
-            .overlay(alignment: .bottom) { strip.padding(Theme.Space.s) }
+            .overlay(alignment: .top) { if panels { readout.padding(Theme.Space.s) } }
+            .overlay(alignment: .bottom) { if panels { strip.padding(Theme.Space.s) } }
             .clipShape(RoundedRectangle(cornerRadius: height == nil ? Theme.Radius.control : Theme.Radius.card, style: .continuous))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-            .contextMenu { options }
+            .contextMenu { if menu { options } }
             .onAppear { choice = MapChoice.load(for: activity.id) }
             .onChange(of: threeD, initial: true) { withAnimation { position = camera } }
-            if height != nil {
+            if height != nil, panels {
                 Text("Drag the strip or tap the route to read a point. Touch and hold the map for the graph and map options.")
                     .font(Theme.Typography.caption).muted().padding(.horizontal, Theme.Space.xs)
             }

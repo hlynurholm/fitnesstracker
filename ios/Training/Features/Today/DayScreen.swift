@@ -54,13 +54,6 @@ private struct DayContent: View {
                 // The week strip keeps its identity across days, so it never redraws from scratch.
                 WeekStrip(days: stripDays, selected: selected, go: go)
                     .task(id: Day.monday(of: selected)) { await loadStrip() }
-                if selected != Day.today() {
-                    HStack {
-                        Spacer(minLength: 0)
-                        Button { go(Day.today()) } label: { Text("Today").font(Theme.Typography.label).padding(.horizontal, Theme.Space.m).frame(height: 36).glass() }
-                    }
-                    .buttonStyle(.plain).foregroundStyle(Theme.Palette.text)
-                }
                 if showCalendar { CalendarPanel(selected: selected) { date in withAnimation(.snappy) { showCalendar = false }; go(date) } }
                 // Beyond the concrete planning window there is no session yet, only an outlook.
                 if Outlook(day.horizon) != .concrete, !day.moved, (model.data?.workouts ?? []).isEmpty {
@@ -210,15 +203,18 @@ private struct DayContent: View {
     /// Beside the heading: the month, and a fetch from Garmin now instead of waiting for the server's half-hourly check.
     private var tools: some View {
         HStack(spacing: Theme.Space.s) {
+            if selected != Day.today() {
+                Button { go(Day.today()) } label: { Text("Today").font(Theme.Typography.label).padding(.horizontal, Theme.Space.m).frame(height: 36).glass() }
+            }
             Button { withAnimation(.snappy) { showCalendar.toggle() } } label: {
-                Label(showCalendar ? "Close" : "Calendar", systemImage: showCalendar ? "chevron.up" : "calendar").font(Theme.Typography.label)
-                    .padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
+                Image(systemName: showCalendar ? "chevron.up" : "calendar").font(.footnote.weight(.bold)).frame(width: 36, height: 36).glass(in: Circle())
             }
+            .accessibilityLabel(showCalendar ? "Close calendar" : "Calendar")
             Button { Task { await sync() } } label: {
-                Label(syncing ? "Syncing" : "Sync", systemImage: "arrow.triangle.2.circlepath").font(Theme.Typography.label)
-                    .padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
+                Image(systemName: "arrow.triangle.2.circlepath").font(.footnote.weight(.bold)).frame(width: 36, height: 36).glass(in: Circle())
+                    .opacity(syncing ? 0.4 : 1)
             }
-            .disabled(syncing).accessibilityHint("Fetches new workouts from Garmin")
+            .disabled(syncing).accessibilityLabel(syncing ? "Syncing" : "Sync").accessibilityHint("Fetches new workouts from Garmin")
         }
         .buttonStyle(.plain).foregroundStyle(Theme.Palette.text).fixedSize()
     }

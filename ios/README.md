@@ -76,6 +76,14 @@ four numbers), inside the session card on a running day, where it replaces the d
 as a card of its own on other days. Maps inside a scrolling page (`fixed`) zoom, turn and tilt with two fingers; one
 finger scrolls the page. Today has a Sync button that calls `POST /api/garmin/sync` and reloads the day.
 
+## Sharing a run
+
+"Share" on the run page opens `Features/Runs/StoryScreen.swift`: eight layouts (`StoryLayout`) drawn by
+`StorySticker` over a photo taken in the app or chosen from Photos, or over nothing, which saves a see-through PNG
+(1080 by 1920, through `ImageRenderer` and the share sheet). Colours come from the eight in `StoryColor`; the route
+and the split bars can instead be coloured by pace, heart rate or elevation. The stickers use their own fixed
+colours, not the app's theme, and only plain shapes and text, since `ImageRenderer` cannot draw maps or glass.
+
 ## Dashboard
 
 Home is a grid of widgets (`Features/Home/Widgets.swift`): watch metrics from `GET /api/metrics`, plus training,

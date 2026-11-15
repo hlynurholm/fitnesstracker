@@ -155,7 +155,14 @@ struct RunDetail: View {
                 let track = a.track ?? []
                 let route = RunRoute(track)
                 if !route.isEmpty { RouteMap(route: route, activity: a) }
-                headline(a)
+                HStack(alignment: .center) {
+                    headline(a)
+                    Spacer(minLength: Theme.Space.s)
+                    NavigationLink { StoryScreen(activity: a) } label: {
+                        Label("Share", systemImage: "square.and.arrow.up").font(Theme.Typography.label).foregroundStyle(Theme.Palette.text).padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
+                    }
+                    .buttonStyle(.plain)
+                }
                 tiles(a)
                 profiles(a, track)
                 splits(a)

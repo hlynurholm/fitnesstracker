@@ -2,18 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo to put behind a run you share.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Training reads nutrition and body measurements (weight, body fat, lean mass, BMI, waist) that MyFitnessPal and your scale save to Health, so your charts fill in without a manual export.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save the picture of a run to your photos.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
 	</array>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
 </dict>
 </plist>

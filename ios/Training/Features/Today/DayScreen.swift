@@ -237,7 +237,8 @@ private struct DayContent: View {
                 }
             }
             .card()
-        } else if !ran, (model.workout?.id ?? 0) > 0 {
+        } else if !ran, (model.workout?.id ?? 0) > 0, model.template.kind != "lift" || model.editing {
+            // A finished lift is deleted from "Edit workout"; a finished rest day has no other page, so it stays here.
             Divided { ActionRow(title: "Delete this session and its sets", tone: .danger) { confirmDelete = true } }.card()
         }
     }

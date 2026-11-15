@@ -578,7 +578,9 @@ struct SleepNights: View {
             let known = nights.compactMap { $0 }
             guard let first = known.map(\.bed).min(), let last = known.map(\.wake).max(), last > first else { return }
             // Whole hours around the nights when there is an axis, a little air otherwise.
-            let lo = axis ? (first / 60).rounded(.down) * 60 : first - 15, hi = axis ? (last / 60).rounded(.up) * 60 : last + 15
+            // Without an axis the chart always reaches midnight and 08:00, which are marked with faint lines.
+            let midnight = 6.0 * 60, eight = 14.0 * 60
+            let lo = axis ? (first / 60).rounded(.down) * 60 : min(first, midnight) - 15, hi = axis ? (last / 60).rounded(.up) * 60 : max(last, eight) + 15
             let left: CGFloat = axis ? 40 : 0
             let y = { (m: Double) in CGFloat((m - lo) / (hi - lo)) * size.height }
             if axis {
@@ -589,6 +591,13 @@ struct SleepNights: View {
                     context.stroke(line, with: .color(Theme.Palette.separator.opacity(Theme.ChartStyle.gridOpacity)), lineWidth: 0.5)
                     context.draw(Text(Self.clock(m)).font(Theme.Typography.label).foregroundStyle(Color(uiColor: .secondaryLabel)),
                                  at: CGPoint(x: 0, y: min(max(y(m), 7), size.height - 7)), anchor: .leading)
+                }
+            }
+            if !axis {
+                for m in [midnight, eight] {
+                    var line = Path()
+                    line.move(to: CGPoint(x: 0, y: y(m))); line.addLine(to: CGPoint(x: size.width, y: y(m)))
+                    context.stroke(line, with: .color(color.opacity(0.3)), lineWidth: 1)
                 }
             }
             let slot = (size.width - left) / CGFloat(max(nights.count, 1))

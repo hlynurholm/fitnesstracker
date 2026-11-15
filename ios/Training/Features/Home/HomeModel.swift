@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The cards the dashboard can show. The raw value is what is saved in the layout, so do not rename a case.
 enum CardKind: String, CaseIterable, Codable {
-    case today, lastRun, steps, restingHR, sleep, hrv, bodyBattery, week, weight, bodyFat, leanMass, nutrition, stress, calories, intensity, floors, distance, sleepScore, respiration, spo2, facts, all
+    case today, lastRun, steps, restingHR, sleep, hrv, bodyBattery, week, weight, bodyFat, leanMass, nutrition, stress, calories, intensity, floors, distance, sleepScore, respiration, spo2, totalCalories, facts, all
 
     var title: String {
         switch self {
@@ -136,6 +136,7 @@ struct MetricSpec {
         .bodyBattery: .init(title: "Body Battery", icon: "battery.75percent", tint: Theme.Palette.ok, key: "bodyBattery.maxValue", style: .bars),
         .stress: .init(title: "Stress", icon: "brain.head.profile", tint: Theme.Palette.energy, key: "stress.avgLevel"),
         .calories: .init(title: "Active calories", icon: "flame.fill", tint: Theme.Palette.energy, key: "calories.burnedActive", unit: "kcal", style: .bars),
+        .totalCalories: .init(title: "Total calories", icon: "flame.circle.fill", tint: Theme.Palette.danger, key: "calories.burnedTotal", unit: "kcal", style: .bars),
         .floors: .init(title: "Floors climbed", icon: "stairs", tint: Theme.Palette.calm, key: "movement.floorsAscended.value", style: .bars, goalKey: "movement.floorsAscended.goal"),
         .distance: .init(title: "Distance on foot", icon: "point.topleft.down.to.point.bottomright.curvepath", tint: Theme.Palette.accent, key: "movement.steps.distanceInMeters", unit: "km", style: .bars, scale: 0.001, digits: 1),
         .sleepScore: .init(title: "Sleep score", icon: "moon.stars.fill", tint: Theme.Palette.sleep, key: "sleep.sleepScores.overall.value"),
@@ -196,7 +197,7 @@ struct CardSetting: Codable, Identifiable, Hashable {
         .init(kind: .bodyFat, wide: false), .init(kind: .leanMass, wide: false),
         .init(kind: .stress, wide: false), .init(kind: .calories, wide: false), .init(kind: .intensity, wide: false), .init(kind: .floors, wide: false),
         .init(kind: .facts, wide: true), .init(kind: .sleepScore, wide: false), .init(kind: .distance, wide: false),
-        .init(kind: .respiration, wide: false), .init(kind: .spo2, wide: false), .init(kind: .all, wide: true),
+        .init(kind: .respiration, wide: false), .init(kind: .spo2, wide: false), .init(kind: .all, wide: true), .init(kind: .totalCalories, wide: false),
     ]
 }
 

@@ -57,7 +57,7 @@ struct WidgetDetailScreen: View {
 
     private func metric(_ spec: MetricSpec) -> Metric {
         Metric(name: spec.title, unit: spec.unit, color: spec.tint, digits: spec.digits, style: spec.style == .bars ? .bars : .line,
-               sums: [.steps, .calories, .floors, .distance].contains(kind), lowerIsBetter: [.restingHR, .stress].contains(kind),
+               sums: [.steps, .calories, .totalCalories, .floors, .distance].contains(kind), lowerIsBetter: [.restingHR, .stress].contains(kind),
                goal: spec.goalKey.flatMap { model.latest($0)?.value }.map { $0 * spec.scale }) { model.value(spec.key, on: $0).map { $0 * spec.scale } }
     }
 

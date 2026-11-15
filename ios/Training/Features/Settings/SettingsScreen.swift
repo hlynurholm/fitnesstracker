@@ -47,13 +47,13 @@ struct SettingsScreen: View {
 
     var body: some View {
         let program = AppModel.shared.program
-        Screen {
+        Screen(title: "Settings") {
             if let error { ErrorCard(message: error) { await load() } }
 
             // Uploads, Garmin and Apple Health sync, exports and reports.
             NavigationLink { DataScreen() } label: {
                 Row(title: "Data and sync", subtitle: "Garmin, Apple Health, uploads, exports and reports") {
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.Palette.muted)
+                    EmptyView()
                 }
             }
             .buttonStyle(.plain).card()

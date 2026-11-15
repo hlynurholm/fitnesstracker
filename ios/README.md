@@ -57,10 +57,15 @@ Everything is set in `Shared/DesignSystem`:
 - A view on a card of colour reads `\.onColor` from the environment and draws in the text colour instead of its
   own tint. `CardKind.fill` in `HomeModel.swift` says which Home widgets are cards of colour.
 
-## Tabs
+## Tabs and titles
 
 Home, Today, Progress, Diet, Settings. The calendar is a panel inside Today (`CalendarPanel`), opened from the
 button under the week strip. No screen puts buttons in the top bar: Home's edit button is at the bottom of the page.
+
+Titles are always drawn by the app, never by the system, so they are always in the heading typeface: the first
+screen of a tab uses `Screen(title:)` (which hides the navigation bar), and a pushed screen or sheet uses
+`.inlineTitle(_:)`. Do not use `navigationTitle` with a large title. Tappable cards and rows carry no arrow.
+The main value of a widget or tile, a number or a name, is `Typography.numeral` or `timer` (through `BigValue`).
 
 ## Runs
 

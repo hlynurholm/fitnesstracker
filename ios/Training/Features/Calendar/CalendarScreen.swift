@@ -167,7 +167,7 @@ struct SessionChangeSheet: View {
                     ProgressView()
                 }
             }
-            .navigationTitle(Day.label(date, year: true)).navigationBarTitleDisplayMode(.inline)
+            .inlineTitle(Day.label(date, year: true))
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             .confirmationDialog("Swap these two days?", isPresented: Binding(get: { swapWith != nil }, set: { if !$0 { swapWith = nil } }), titleVisibility: .visible, presenting: swapWith) { other in
                 Button("Swap") { apply { try await API.shared.send("POST", "/api/schedule/swap", ["a": date, "b": other.date]) } }

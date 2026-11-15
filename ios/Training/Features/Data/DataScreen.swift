@@ -73,7 +73,7 @@ struct DataScreen: View {
                     ForEach(reports) { r in
                         NavigationLink(value: r) {
                             Row(title: r.title, subtitle: [r.date.map { Day.label($0, year: true) }, r.author, r.section].compactMap { $0 }.joined(separator: " · ")) {
-                                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.Palette.muted)
+                                EmptyView()
                             }
                         }
                         .buttonStyle(.plain)
@@ -94,7 +94,7 @@ struct DataScreen: View {
                 if !uploads.isEmpty { Text("Touch and hold a file to delete it.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
             }.card()
         }
-        .navigationTitle("Data")
+        .inlineTitle("Data and sync")
         .navigationDestination(for: Report.self) { ReportScreen(id: $0.id) { await load() } }
         .overlay { if busy { ProgressView().padding(Theme.Space.xl).background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.card)) } }
         .toast($toast)

@@ -252,7 +252,7 @@ struct ExercisePicker: View {
                 }
             }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search, or type a new name")
-            .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+            .inlineTitle(title)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
     }

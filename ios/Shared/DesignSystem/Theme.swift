@@ -109,9 +109,10 @@ enum Theme {
         static let body = text("Regular", 17, .body)
         static let callout = text("Regular", 16, .callout)
         static let caption = text("Medium", 13, .footnote)
-        /// Big numbers: tiles, timers.
-        static let numeral = text("Bold", 22, .title2).monospacedDigit()
-        static let timer = text("Bold", 34, .largeTitle).monospacedDigit()
+        /// The main value of a tile or widget, whether a number or a name. In the heading face, so "Lift B" and
+        /// "4.71" look alike; the unit after it is set in `caption` or `callout`.
+        static let numeral = Font.system(.title2, design: headingDesign, weight: .heavy).width(headingWidth).monospacedDigit()
+        static let timer = Font.system(.largeTitle, design: headingDesign, weight: .heavy).width(headingWidth).monospacedDigit()
 
         /// The accessory face at a size that still follows the reader's text size setting.
         private static func text(_ weight: String, _ size: CGFloat, _ style: Font.TextStyle) -> Font {

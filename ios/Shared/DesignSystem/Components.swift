@@ -49,6 +49,16 @@ extension View {
     func muted() -> some View { modifier(MutedStyle()) }
 }
 
+extension View {
+    /// The title of a pushed screen or a sheet: small, in the bar, drawn by the app in the heading typeface. Every
+    /// screen that keeps its navigation bar uses this instead of `navigationTitle`, so no title falls back to the
+    /// system's own font. (First screens of tabs use `Screen(title:)`.)
+    func inlineTitle(_ title: String) -> some View {
+        navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .principal) { Text(title).font(Theme.Typography.headline).lineLimit(1).accessibilityAddTraits(.isHeader) } }
+    }
+}
+
 extension EnvironmentValues {
     /// The view sits on a card that is filled with colour, so it draws in the text colour instead of its own tint.
     @Entry var onColor = false
@@ -115,15 +125,40 @@ private struct Wave: Shape {
 
 /// Vertical stack of cards inside a ScrollView, used by every tab.
 struct Screen<Content: View>: View {
+    /// The page's heading, for the first screen of a tab. With one, the navigation bar is hidden and the heading is
+    /// drawn here in the heading typeface, so every tab's title looks the same and no empty bar sits above it.
+    /// Screens that are pushed (and need the back button) leave it nil and set an inline `navigationTitle`.
+    var title: String? = nil
     @ViewBuilder var content: Content
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: Theme.Space.m) { content }
-                .padding(.horizontal, Theme.Space.l)
-                .padding(.bottom, Theme.Space.xl)
+            LazyVStack(alignment: .leading, spacing: Theme.Space.m) {
+                if let title {
+                    Text(title).font(Theme.Typography.screenTitle).lineLimit(1).minimumScaleFactor(0.7)
+                        .padding(.horizontal, Theme.Space.xs).padding(.top, Theme.Space.s).accessibilityAddTraits(.isHeader)
+                }
+                content
+            }
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.bottom, Theme.Space.xl)
         }
         .screenBackground()
         .scrollDismissesKeyboard(.interactively)
+        .toolbar(title == nil ? .automatic : .hidden, for: .navigationBar)
+        .overlay(alignment: .top) { if title != nil { StatusBarFade() } }
+    }
+}
+
+/// With the navigation bar hidden, the page scrolls under the clock. This blurs it out there.
+private struct StatusBarFade: View {
+    var body: some View {
+        GeometryReader { geo in
+            Rectangle().fill(.ultraThinMaterial)
+                .mask(LinearGradient(stops: [.init(color: .black, location: 0.65), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+                .frame(height: geo.safeAreaInsets.top + 12)
+                .offset(y: -geo.safeAreaInsets.top)
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -140,14 +175,6 @@ struct Badge: View {
         if onColor { label.foregroundStyle(Theme.Palette.text).glass() } else { label.foregroundStyle(tone == .neutral ? Theme.Palette.muted : tone.color).background(tone.soft, in: Capsule()) }
     }
     @Environment(\.onColor) private var onColor
-}
-
-/// Round glass button face with an arrow, on cards that open something.
-struct OpenGlyph: View {
-    var body: some View {
-        Image(systemName: "arrow.up.right").font(.footnote.weight(.bold)).foregroundStyle(Theme.Palette.text)
-            .frame(width: 36, height: 36).glass(in: Circle())
-    }
 }
 
 struct SectionTitle: View {
@@ -257,9 +284,7 @@ struct ActionRow: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Row(title: title, subtitle: subtitle, titleColor: tone?.color ?? Theme.Palette.text) {
-                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.Palette.muted)
-            }
+            Row(title: title, subtitle: subtitle, titleColor: tone?.color ?? Theme.Palette.text) { EmptyView() }
         }
         .buttonStyle(.plain)
     }

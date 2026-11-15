@@ -102,6 +102,45 @@ struct ChartCaption: View {
     }
 }
 
+/// The two lines of a quarter-height widget: its name over its value, sitting in the middle of the row.
+struct CompactLines<Trailing: View>: View {
+    let kind: CardKind
+    var title: String? = nil
+    let value: String
+    var unit = ""
+    @ViewBuilder var trailing: Trailing
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
+            CardHeader(kind: kind, title: title, compact: true) { trailing }
+            BigValue(value: value, unit: unit, compact: true)
+        }
+        .frame(maxHeight: .infinity)
+    }
+}
+
+/// A 1 × ¼ widget: name and value on the left; on the right a note over the caption, on the same two lines, and
+/// then room for a small picture.
+struct StripLines<Note: View, Picture: View>: View {
+    let kind: CardKind
+    var title: String? = nil
+    let value: String
+    var unit = ""
+    let caption: [String?]
+    @ViewBuilder var note: Note
+    @ViewBuilder var picture: Picture
+    var body: some View {
+        HStack(alignment: .center, spacing: Theme.Space.m) {
+            CompactLines(kind: kind, title: title, value: value, unit: unit) { EmptyView() }.fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .trailing, spacing: Theme.Space.xs) {
+                note.frame(height: 16)
+                ChartCaption(caption, trailing: true).frame(height: 28, alignment: .bottom)
+            }
+            picture
+        }
+        .frame(maxHeight: .infinity)
+    }
+}
+
 /// A few named numbers side by side, for the largest size.
 struct StatRow: View {
     let items: [(label: String, value: String)]
@@ -141,25 +180,9 @@ struct MetricWidget<Trailing: View, Chart: View, More: View>: View {
     var body: some View {
         switch size {
         case .small:
-            VStack(alignment: .leading, spacing: 0) {
-                CardHeader(kind: kind, compact: true) { trailing }
-                Spacer(minLength: 0)
-                BigValue(value: value, unit: unit, compact: true)
-            }
+            CompactLines(kind: kind, value: value, unit: unit) { trailing }
         case .strip:
-            HStack(alignment: .center, spacing: Theme.Space.m) {
-                VStack(alignment: .leading, spacing: 0) {
-                    CardHeader(kind: kind, compact: true)
-                    Spacer(minLength: 0)
-                    BigValue(value: value, unit: unit, compact: true)
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                VStack(alignment: .trailing, spacing: 0) {
-                    trailing.frame(height: 16)
-                    Spacer(minLength: 0)
-                    ChartCaption(caption, trailing: true)
-                }
-            }
+            StripLines(kind: kind, value: value, unit: unit, caption: caption) { trailing } picture: { EmptyView() }
         case .square:
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 CardHeader(kind: kind) { trailing }
@@ -355,44 +378,31 @@ struct SessionCard: View {
                 Group {
                     switch size {
                     case .small:
-                        VStack(alignment: .leading, spacing: 0) {
-                            CardHeader(kind: .today, title: title, compact: true)
-                            Spacer(minLength: 0)
-                            Text(t.name).font(Theme.Typography.headline).lineLimit(1).minimumScaleFactor(0.6)
-                        }
+                        CompactLines(kind: .today, title: title, value: t.name) { EmptyView() }
                     case .strip:
-                        HStack(spacing: Theme.Space.m) {
-                            VStack(alignment: .leading, spacing: 0) {
-                                CardHeader(kind: .today, title: "\(title)'s session", compact: true)
-                                Spacer(minLength: 0)
-                                Text(t.name).font(Theme.Typography.title).lineLimit(1).minimumScaleFactor(0.6)
-                            }
-                            badge.fixedSize()
-                            OpenGlyph()
-                        }
+                        StripLines(kind: .today, title: "\(title)'s session", value: t.name, caption: [about]) { badge.fixedSize() } picture: { EmptyView() }
                     case .square:
                         VStack(alignment: .leading, spacing: Theme.Space.s) {
                             CardHeader(kind: .today, title: title)
-                            Text(t.name).font(Theme.Typography.title).lineLimit(2).minimumScaleFactor(0.7)
+                            BigValue(value: t.name)
                             Caption(about, lines: 2)
                             Spacer(minLength: 0)
-                            HStack { badge; Spacer(minLength: 0); OpenGlyph() }
+                            badge
                         }
                     case .wide:
                         VStack(alignment: .leading, spacing: Theme.Space.s) {
                             CardHeader(kind: .today, title: "\(title)'s session") { badge }
-                            Text(t.name).font(Theme.Typography.screenTitle).lineLimit(1).minimumScaleFactor(0.6)
+                            BigValue(value: t.name)
                             Caption(about, lines: 2)
                             Spacer(minLength: 0)
-                            HStack { Caption(t.duration ?? "", lines: 1); Spacer(minLength: 0); OpenGlyph() }
+                            Caption(t.duration ?? "", lines: 1)
                         }
                     case .large:
                         VStack(alignment: .leading, spacing: Theme.Space.s) {
                             CardHeader(kind: .today, title: "\(title)'s session") { badge }
-                            Text(t.name).font(Theme.Typography.screenTitle).lineLimit(1).minimumScaleFactor(0.6)
+                            BigValue(value: t.name)
                             Caption(about, lines: 1)
                             summary(s.day).frame(maxHeight: .infinity, alignment: .top)
-                            HStack { Spacer(minLength: 0); OpenGlyph() }
                         }
                     }
                 }
@@ -445,7 +455,7 @@ struct LastRunCard: View {
                 // The map takes touches of its own, so only the heading opens the run.
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
                     Button { open(run.id) } label: {
-                        CardHeader(kind: .lastRun) { Text(Day.label(run.day)).font(Theme.Typography.label); OpenGlyph().scaleEffect(0.8) }.contentShape(Rectangle())
+                        CardHeader(kind: .lastRun) { Text(Day.label(run.day)).font(Theme.Typography.label) }.contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     if route.isEmpty {
@@ -460,21 +470,10 @@ struct LastRunCard: View {
                     Group {
                         switch size {
                         case .small:
-                            VStack(alignment: .leading, spacing: 0) {
-                                CardHeader(kind: .lastRun, compact: true)
-                                Spacer(minLength: 0)
-                                BigValue(value: km, unit: "km", compact: true)
-                            }
+                            CompactLines(kind: .lastRun, value: km, unit: "km") { EmptyView() }
                         case .strip:
-                            HStack(spacing: Theme.Space.m) {
-                                VStack(alignment: .leading, spacing: 0) {
-                                    CardHeader(kind: .lastRun, compact: true)
-                                    Spacer(minLength: 0)
-                                    BigValue(value: km, unit: "km", compact: true)
-                                }
-                                .fixedSize(horizontal: true, vertical: false)
-                                ChartCaption([Day.short(run.day)] + facts.prefix(2), trailing: true)
-                                if !route.isEmpty { RouteSketch(route: route, lineWidth: 2.5).frame(width: 72) }
+                            StripLines(kind: .lastRun, value: km, unit: "km", caption: facts.prefix(2).map { $0 }) { Text(Day.label(run.day)).font(Theme.Typography.label).muted() } picture: {
+                                if !route.isEmpty { RouteSketch(route: route, lineWidth: 2.5).frame(width: 64, height: 44) }
                             }
                         case .square:
                             VStack(alignment: .leading, spacing: Theme.Space.s) {
@@ -488,8 +487,7 @@ struct LastRunCard: View {
                                 CardHeader(kind: .lastRun) { Text(Day.label(run.day)).font(Theme.Typography.label) }
                                 HStack(alignment: .center, spacing: Theme.Space.l) {
                                     VStack(alignment: .leading, spacing: 2) { BigValue(value: km, unit: "km"); ChartCaption(facts) }
-                                    if !route.isEmpty { RouteSketch(route: route).frame(width: 104).frame(maxHeight: .infinity) }
-                                    OpenGlyph()
+                                    if !route.isEmpty { RouteSketch(route: route).frame(width: 130).frame(maxHeight: .infinity) }
                                 }
                                 .frame(maxHeight: .infinity)
                             }
@@ -515,19 +513,10 @@ struct WeekCard: View {
         let text = "\(count) session\(count == 1 ? "" : "s") done"
         switch size {
         case .small:
-            VStack(alignment: .leading, spacing: 0) {
-                CardHeader(kind: .week, compact: true)
-                Spacer(minLength: 0)
-                BigValue(value: "\(count)", unit: "done", compact: true)
-            }
+            CompactLines(kind: .week, value: "\(count)", unit: "done") { EmptyView() }
         case .strip:
             HStack(spacing: Theme.Space.m) {
-                VStack(alignment: .leading, spacing: 0) {
-                    CardHeader(kind: .week, compact: true)
-                    Spacer(minLength: 0)
-                    BigValue(value: "\(count)", unit: "done", compact: true)
-                }
-                .fixedSize(horizontal: true, vertical: false)
+                CompactLines(kind: .week, value: "\(count)", unit: "done") { EmptyView() }.fixedSize(horizontal: true, vertical: false)
                 days(monday, done, circle: 24, labels: true)
             }
         case .square:
@@ -642,11 +631,7 @@ struct FactsCard: View {
         if let sheet = model.factSheet, let first = sheet.facts.first {
             switch size {
             case .small:
-                VStack(alignment: .leading, spacing: 0) {
-                    CardHeader(kind: .facts, title: first.label, compact: true)
-                    Spacer(minLength: 0)
-                    BigValue(value: first.value, unit: first.unit, compact: true)
-                }
+                CompactLines(kind: .facts, title: first.label, value: first.value, unit: first.unit) { EmptyView() }
             case .strip:
                 FactLine(fact: first).frame(maxHeight: .infinity)
             case .square:
@@ -761,11 +746,18 @@ struct AllMetricsCard: View {
         let date = model.days.keys.max() ?? model.today
         let count = model.days[date]?.count ?? 0
         NavigationLink { AllMetricsScreen(model: model) } label: {
-            VStack(alignment: .leading, spacing: size.rows == 1 ? 0 : Theme.Space.s) {
-                CardHeader(kind: .all, title: size.isWide ? nil : "Watch data", compact: size.rows == 1)
-                Spacer(minLength: 0)
-                if size.rows > 1 { BigValue(value: "\(count)", unit: "values") }
-                Caption(size == .small ? "\(count) values" : "\(count) values for \(Day.label(date)), \(model.days.count) days stored", lines: 2)
+            Group {
+                switch size {
+                case .small: CompactLines(kind: .all, title: "Watch data", value: "\(count)", unit: "values") { EmptyView() }
+                case .strip: StripLines(kind: .all, title: "Watch data", value: "\(count)", unit: "values", caption: [Day.label(date), "\(model.days.count) days stored"]) { EmptyView() } picture: { EmptyView() }
+                default:
+                    VStack(alignment: .leading, spacing: Theme.Space.s) {
+                        CardHeader(kind: .all, title: size.isWide ? nil : "Watch data")
+                        BigValue(value: "\(count)", unit: "values")
+                        Spacer(minLength: 0)
+                        ChartCaption([Day.label(date), "\(model.days.count) days stored"])
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).contentShape(Rectangle())
         }
@@ -792,6 +784,6 @@ struct AllMetricsScreen: View {
             }
             .card()
         }
-        .navigationTitle(Day.label(date)).navigationBarTitleDisplayMode(.inline)
+        .inlineTitle(Day.label(date))
     }
 }

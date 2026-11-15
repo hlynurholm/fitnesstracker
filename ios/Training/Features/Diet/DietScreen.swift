@@ -9,7 +9,7 @@ struct DietScreen: View {
     @State private var openDay: NutritionDay?
 
     var body: some View {
-        Screen {
+        Screen(title: "Diet") {
             if let d = data {
                 tiles(d)
                 targets(d)

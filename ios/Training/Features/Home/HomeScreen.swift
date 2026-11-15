@@ -20,7 +20,7 @@ struct HomeScreen: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Screen {
+        Screen(title: "Home") {
             Text(editing ? "Drag to move. Use the corner handle to resize." : Day.label(model.today, year: true))
                 .font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted).padding(.horizontal, Theme.Space.xs)
             if let error = model.error, model.dash == nil { ErrorCard(message: error) { await model.load() } }
@@ -94,7 +94,7 @@ struct HomeScreen: View {
         let size = setting.shape
         let surface = content(setting, size: size)
             .allowsHitTesting(!editing) // while editing, touches move and resize the widget instead
-            .padding(size.rows == 1 ? Theme.Space.m : Theme.Space.l)
+            .padding(.horizontal, Theme.Space.l).padding(.vertical, size.rows == 1 ? Theme.Space.s : Theme.Space.l)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .clipped()
             .cardSurface(fill: setting.kind.fill?.colors, lightFill: setting.kind.fill?.light ?? false)
@@ -270,7 +270,7 @@ private struct AddWidgetSheet: View {
                 .padding(Theme.Space.l)
             }
             .screenBackground()
-            .navigationTitle("Add widgets").navigationBarTitleDisplayMode(.inline)
+            .inlineTitle("Add widgets")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }

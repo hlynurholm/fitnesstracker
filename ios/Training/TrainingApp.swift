@@ -30,7 +30,7 @@ private struct RootView: View {
                 tabs
             } else if let error = app.error {
                 NavigationStack {
-                    Screen {
+                    Screen(title: "Training") {
                         ErrorCard(message: error) { await app.load() }
                         VStack(alignment: .leading, spacing: Theme.Space.m) { CardTitle("Connection"); ConnectionForm() }.card()
                     }
@@ -51,7 +51,7 @@ private struct RootView: View {
 
     private var connect: some View {
         NavigationStack {
-            Screen {
+            Screen(title: "Training") {
                 Text("Connect the app to your training tracker. Everything is read from and saved to the same server as the web app.")
                     .font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted)
                 ConnectionForm().card()
@@ -64,7 +64,7 @@ private struct RootView: View {
         TabView(selection: $tab) {
             Tab("Home", systemImage: "square.grid.2x2.fill", value: 0) { NavigationStack { HomeScreen { tab = 1 } } }
             // Today holds the calendar too: the week strip opens into the month.
-            Tab("Today", systemImage: "calendar", value: 1) { NavigationStack { DayScreen(date: Day.today()) } }
+            Tab("Today", systemImage: "calendar", value: 1) { NavigationStack { DayScreen(date: Day.today(), isRoot: true) } }
             Tab("Progress", systemImage: "chart.line.uptrend.xyaxis", value: 3) { NavigationStack { ProgressScreen() } }
             Tab("Diet", systemImage: "fork.knife", value: 4) { NavigationStack { DietScreen() } }
             Tab("Settings", systemImage: "gearshape", value: 5) { NavigationStack { SettingsScreen() } }

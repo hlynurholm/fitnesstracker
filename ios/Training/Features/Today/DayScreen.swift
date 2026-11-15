@@ -6,7 +6,7 @@ import SwiftUI
 /// under the week strip is swapped in one step.
 struct DayScreen: View {
     @State var date: String
-    /// The Today tab's own screen (shows the Settings gear), as opposed to a day pushed from the calendar.
+    /// The Today tab's own screen, as opposed to a day pushed from another page (which keeps the bar for its back button).
     var isRoot = false
     @State private var model: DayModel?
 
@@ -15,8 +15,8 @@ struct DayScreen: View {
             if let model {
                 DayContent(model: model, selected: date, isRoot: isRoot) { date = $0 }
             } else {
-                Screen { ProgressView().frame(maxWidth: .infinity).padding(.top, 80) }
-                    .navigationTitle(date == Day.today() ? "Today" : Day.label(date))
+                Screen(title: isRoot ? (date == Day.today() ? "Today" : Day.label(date)) : nil) { ProgressView().frame(maxWidth: .infinity).padding(.top, 80) }
+                    .inlineTitle(date == Day.today() ? "Today" : Day.label(date))
             }
         }
         .task(id: date) {
@@ -46,7 +46,7 @@ private struct DayContent: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Screen {
+        Screen(title: isRoot ? (selected == Day.today() ? "Today" : Day.label(selected)) : nil) {
             if let day = model.day {
                 // The week strip keeps its identity across days, so it never redraws from scratch.
                 WeekStrip(week: model.data?.week ?? [], selected: selected, go: go)
@@ -84,6 +84,7 @@ private struct DayContent: View {
                     others
                     if day.testWeek { TestsCard(model: model) }
                     if model.template.kind != "lift" { ChecklistCard(model: model, block: "knee", title: model.program.kneeRoutine.title, note: (model.program.kneeRoutine.note ?? "") + (model.template.kind == "run" ? " Optional after the run." : ""), items: model.program.kneeRoutine.items.map { .init(id: $0.id, text: $0.text) }) }
+                    facts(day)
                 }
                 .id(model.date) // per-day field state (typed weight, open notes) starts fresh for each day
                 }
@@ -91,7 +92,7 @@ private struct DayContent: View {
                 ErrorCard(message: error) { await model.load() }
             }
         }
-        .navigationTitle(selected == Day.today() ? "Today" : Day.label(selected))
+        .inlineTitle(selected == Day.today() ? "Today" : Day.label(selected))
         .refreshable { await model.load() }
         .safeAreaInset(edge: .bottom) { if model.template.kind == "lift", model.mode == .log { TimerBar(model: model) } }
         .toast($model.toast)
@@ -106,23 +107,28 @@ private struct DayContent: View {
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await API.shared.flush() } } }
     }
 
+    /// Notes that change what to do today. They stay at the top.
+    @ViewBuilder
     private func header(_ day: DayInfo) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Space.s) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Theme.Space.s) {
-                    if model.isToday { Badge(Day.label(day.date, year: true)) }
-                    if day.week >= 1 { Badge("Week \(day.week)", tone: .accent) }
-                    Badge("Phase \(day.phase): \(day.phaseName)")
-                    if day.deload { Badge("Deload week", tone: .warn) }
-                    if day.testWeek { Badge("Test week", tone: .warn) }
-                    if day.moved { Badge("Moved from the plan", tone: .accent) }
-                    if day.rotated { Badge("Next in your lift order", tone: .accent) }
-                    if day.beyondPlan { Badge("Beyond the planned weeks") }
-                }
+        if day.beforeStart { Banner("The plan starts Monday \(Day.short(day.startDate)). This shows the normal session for a \(day.weekdayName).", tone: .accent) }
+        if day.deload { Banner("Deload: every 6th week all sets are cut in half. Keep the weight, do half the sets.") }
+    }
+
+    /// Where the day sits in the plan: date, week, phase and whether it was moved. Reference, so it closes the page.
+    private func facts(_ day: DayInfo) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Space.s) {
+                Badge(Day.label(day.date, year: true))
+                if day.week >= 1 { Badge("Week \(day.week)", tone: .accent) }
+                Badge("Phase \(day.phase): \(day.phaseName)")
+                if day.deload { Badge("Deload week", tone: .warn) }
+                if day.testWeek { Badge("Test week", tone: .warn) }
+                if day.moved { Badge("Moved from the plan", tone: .accent) }
+                if day.rotated { Badge("Next in your lift order", tone: .accent) }
+                if day.beyondPlan { Badge("Beyond the planned weeks") }
             }
-            if day.beforeStart { Banner("The plan starts Monday \(Day.short(day.startDate)). This shows the normal session for a \(day.weekdayName).", tone: .accent) }
-            if day.deload { Banner("Deload: every 6th week all sets are cut in half. Keep the weight, do half the sets.") }
         }
+        .padding(.top, Theme.Space.s)
     }
 
     @ViewBuilder

@@ -44,6 +44,15 @@ struct RunRoute {
         }
     }
 
+    /// The region for a map with panels laid over its top and bottom: `tall` times more room up and down, so the
+    /// route sits in the open band between them, a little above the middle.
+    func region(tall: Double) -> MKCoordinateRegion {
+        var r = region
+        r.span.latitudeDelta *= tall
+        r.center.latitude -= r.span.latitudeDelta * 0.04
+        return r
+    }
+
     /// A map region that holds the whole route with some air around it.
     var region: MKCoordinateRegion {
         let lats = points.map(\.coordinate.latitude), lons = points.map(\.coordinate.longitude)
@@ -90,8 +99,7 @@ struct RunScreen: View {
 
     var body: some View {
         Screen { RunDetail(id: id) { day = $0.day } }
-            .navigationTitle(day.map { Day.label($0) } ?? "Run")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle(day.map { Day.label($0) } ?? "Run")
     }
 }
 
@@ -117,8 +125,7 @@ struct RunDetail: View {
                         HStack {
                             headline(a)
                             Spacer(minLength: Theme.Space.s)
-                            Text("Open").font(Theme.Typography.callout)
-                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                            Text("Open").font(Theme.Typography.label)
                         }
                         .contentShape(Rectangle())
                     }
@@ -308,7 +315,7 @@ struct RouteMap: View {
     /// The whole route from straight above, or from an angle in 3D.
     private var camera: MapCameraPosition {
         let region = route.region
-        guard threeD else { return .region(region) }
+        guard threeD else { return .region(route.region(tall: height == nil ? 2.4 : 1.7)) }
         let metres = max(region.span.latitudeDelta, region.span.longitudeDelta * cos(region.center.latitude * .pi / 180)) * 111_000
         return .camera(MapCamera(centerCoordinate: region.center, distance: metres * 2.4, heading: 0, pitch: 55))
     }
@@ -347,11 +354,13 @@ struct RouteMap: View {
                 }
                 .mapStyle(style)
                 .onTapGesture { picked = nearest(to: $0, proxy) } // a tap off the route clears the point
-                // The numbers and the strip float on the map as two pieces of glass.
-                .safeAreaInset(edge: .top, spacing: 0) { readout.padding(Theme.Space.s) }
-                .safeAreaInset(edge: .bottom, spacing: 0) { strip.padding(Theme.Space.s) }
+                // The map runs on below its frame, which puts the map maker's mark out of sight.
+                .padding(.bottom, -40)
             }
             .frame(height: height)
+            // The numbers and the strip float on the map as two pieces of glass.
+            .overlay(alignment: .top) { readout.padding(Theme.Space.s) }
+            .overlay(alignment: .bottom) { strip.padding(Theme.Space.s) }
             .clipShape(RoundedRectangle(cornerRadius: height == nil ? Theme.Radius.control : Theme.Radius.card, style: .continuous))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
             .contextMenu { options }

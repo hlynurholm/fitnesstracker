@@ -9,7 +9,7 @@ struct ProgressScreen: View {
     @State private var runs: [GarminActivity] = []
 
     var body: some View {
-        Screen {
+        Screen(title: "Progress") {
             if let d = data, let program = AppModel.shared.program {
                 let m = Model(d, program)
                 tiles(m, d, program)
@@ -176,7 +176,7 @@ struct ProgressScreen: View {
                         NavigationLink { RunScreen(id: run.id) } label: {
                             Row(title: "\(Day.label(run.day)) · \(String(format: "%.2f km", (run.distance_m ?? 0) / 1000))",
                                 subtitle: [run.duration_s.map { Fmt.time($0) }, run.avg_pace_s_per_km.map { Fmt.pace($0) }, run.avg_hr.map { "\(Int($0)) bpm" }].compactMap { $0 }.joined(separator: " · ")) {
-                                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.Palette.muted)
+                                EmptyView()
                             }
                         }
                         .buttonStyle(.plain)

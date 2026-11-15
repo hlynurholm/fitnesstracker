@@ -13,9 +13,13 @@ struct RunBody: View {
 
     var body: some View {
         let t = model.template, p = model.program, zones = p.heartRate.zones
+        let recorded = model.data?.recorded ?? []
         VStack(alignment: .leading, spacing: Theme.Space.m) {
-            let recorded = model.data?.recorded ?? []
-            if recorded.isEmpty {
+            if !recorded.isEmpty {
+                // The run is in: this card is now about what was done. What was planned has its own section further down.
+                ForEach(recorded) { RunSummary(id: $0.id, opens: false) }
+                HStack { Spacer(minLength: 0); ForEach(recorded) { OpenRunButton(id: $0.id) } }
+            } else {
                 if let d = t.detail { Text(d).font(Theme.Typography.callout) }
                 if t.easy == true, let easy = zones.first { Banner("Keep heart rate under \(easy.to). Pace is a guide only.", tone: .accent) }
                 if t.timeTrial == true {
@@ -27,19 +31,14 @@ struct RunBody: View {
                     if let c = p.running.cadenceNote { Text(c).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
                     timer(t, zones)
                 }
-            } else {
-                // Once the watch's recording is in, what was planned gives way to what was done.
-                ForEach(recorded) { RunSummary(id: $0.id, opens: false) }
-                if let d = t.detail { Text("Planned: \(d)").font(Theme.Typography.caption).muted() }
-            }
             HStack(spacing: Theme.Space.s) {
                 LabeledField(label: "Distance (km)") { TextField(t.timeTrial == true ? "5.00" : "km", text: $distance).keyboardType(.decimalPad) }
                 LabeledField(label: "Time") { TextField("mm:ss", text: $time).keyboardType(.numbersAndPunctuation) }
                 LabeledField(label: "Avg HR") { TextField("bpm", text: $hr).keyboardType(.numberPad) }
             }
             if let km = Fmt.parse(distance), km > 0, let s = Fmt.parseTime(time) { Text("Pace \(Fmt.pace(s / km))").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
-            // With the watch's recording in, the corner opens the run. More files are attached from the run's own page.
-            if recorded.isEmpty { garmin } else { HStack { Spacer(minLength: 0); ForEach(recorded) { OpenRunButton(id: $0.id) } } }
+            garmin
+            }
         }
         .onAppear {
             distance = Fmt.number(model.workout?.distance_km); time = Fmt.time(model.workout?.time_sec); hr = Fmt.number(model.workout?.avg_hr)

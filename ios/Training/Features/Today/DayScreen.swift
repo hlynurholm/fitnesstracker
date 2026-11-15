@@ -71,6 +71,7 @@ private struct DayContent: View {
                     others
                     if day.testWeek { TestsCard(model: model) }
                     if model.template.kind != "lift" { ChecklistCard(model: model, block: "knee", title: model.program.kneeRoutine.title, note: (model.program.kneeRoutine.note ?? "") + (model.template.kind == "run" ? " Optional after the run." : ""), items: model.program.kneeRoutine.items.map { .init(id: $0.id, text: $0.text) }) }
+                    if ran { planned(day) }
                     facts(day)
                 }
                 .id(model.date) // per-day field state (typed weight, open notes) starts fresh for each day
@@ -92,6 +93,24 @@ private struct DayContent: View {
         .onChange(of: model.mode == .log && model.template.kind == "lift", initial: true) { _, on in UIApplication.shared.isIdleTimerDisabled = on }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await API.shared.flush() } } }
+    }
+
+    /// The watch's recording of this running day is in, so the day shows what was done first.
+    private var ran: Bool { ["run", "other"].contains(model.template.kind) && !(model.data?.recorded ?? []).isEmpty }
+
+    /// What the day asked for, once it has been run: kept for reference, quieter and further down.
+    @ViewBuilder
+    private func planned(_ day: DayInfo) -> some View {
+        let t = model.template
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
+            Text("THE PLAN WAS").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+            Text([t.name, t.duration].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(Theme.Typography.callout.weight(.semibold))
+            ForEach([t.subtitle, t.detail, t.pace].compactMap { $0 }, id: \.self) { Text($0).font(Theme.Typography.caption) }
+            if day.moved, let usual = model.program.templates[day.defaultTemplateKey] { Text("Moved: the plan had \(usual.name) on this day.").font(Theme.Typography.caption) }
+            ForEach(day.extras ?? [], id: \.self) { Text($0).font(Theme.Typography.caption) }
+        }
+        .foregroundStyle(Theme.Palette.muted)
+        .padding(.horizontal, Theme.Space.xs).padding(.top, Theme.Space.s)
     }
 
     /// Notes that change what to do today. They stay at the top.
@@ -124,14 +143,17 @@ private struct DayContent: View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text([t.kind == "rest" ? "Rest" : t.kind.capitalizedFirst, t.duration].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ").uppercased())
+                    Text((ran ? "Run" : [t.kind == "rest" ? "Rest" : t.kind.capitalizedFirst, t.duration].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).uppercased())
                         .font(Theme.Typography.label).foregroundStyle(Theme.Palette.kind(t.kind))
-                    Text(t.name).font(Theme.Typography.title)
-                    if let s = t.subtitle { Text(s).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
+                    Text(ran ? "What you ran" : t.name).font(Theme.Typography.title)
+                    if !ran, let s = t.subtitle { Text(s).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
                 }
                 Spacer()
                 Badge(model.status.text, tone: model.status.tone)
             }
+            if ran {
+                RunBody(model: model)
+            } else {
             if day.moved, model.templateKey == day.templateKey, let planned = model.program.templates[day.defaultTemplateKey] {
                 Text("The plan has \(planned.name) today. You moved it.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
             }
@@ -152,6 +174,7 @@ private struct DayContent: View {
             default:
                 if let d = t.detail { Text(d).font(Theme.Typography.callout) }
                 if let s = model.program.stepsNote { Text(s).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
+            }
             }
         }
         .card()

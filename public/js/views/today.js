@@ -208,6 +208,7 @@ class DayView {
     if (day.deload) meta.appendChild(h("span", { class: "badge warn" }, "Deload week"));
     if (day.testWeek) meta.appendChild(h("span", { class: "badge warn" }, "Test week"));
     if (day.moved) meta.appendChild(h("span", { class: "badge accent" }, "Moved from the plan"));
+    if (day.rotated) meta.appendChild(h("span", { class: "badge", title: `The weekday plan says ${templateFor(day.defaultTemplateKey).name}` }, "Next in your lift order"));
     if (day.beyondPlan) meta.appendChild(h("span", { class: "badge" }, "Beyond the 16 planned weeks"));
     c.appendChild(meta);
     if (day.beforeStart) c.appendChild(h("div", { class: "banner info" }, `The plan starts Monday ${fmtShort(day.startDate)}. This shows the normal session for a ${day.weekdayName}.`));

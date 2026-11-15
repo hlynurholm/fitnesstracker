@@ -85,6 +85,7 @@ export async function uploadFiles(input, fields, btn, onDone) {
   try {
     const r = await api.upload(fd);
     const lines = r.uploads.map((u) => {
+      if (u.duplicate) return `${u.filename}: already uploaded on ${String(u.uploaded_at || "").slice(0, 10)}, skipped`;
       if (u.error && u.status === "failed") return `${u.filename}: stored, but could not be parsed (${u.error})`;
       const parts = [];
       if (u.activities.length) parts.push(`${u.activities.length} activit${u.activities.length === 1 ? "y" : "ies"}${u.activities[0].distance_m ? ` (${(u.activities[0].distance_m / 1000).toFixed(2)} km, ${fmtTime(u.activities[0].duration_s)})` : ""}`);

@@ -116,6 +116,7 @@ class CalendarView {
       h("h2", { style: { marginBottom: ".1rem" } }, d.name),
       h("div", { class: "muted small" }, [t.subtitle, d.deload ? "deload week" : null, d.testWeek ? "test week" : null].filter(Boolean).join(" · ")),
       d.moved ? h("div", { class: "muted small", style: { marginTop: ".3rem" } }, `Moved. The plan has ${templateFor(d.defaultTemplateKey).name} on this day.`) : null,
+      d.rotated ? h("div", { class: "muted small", style: { marginTop: ".3rem" } }, `Next in your lift order. The weekday plan has ${templateFor(d.defaultTemplateKey).name}; change the order in Settings.`) : null,
       w ? h("div", { style: { marginTop: ".5rem" } }, h("span", { class: `badge ${w.status === "done" ? "ok" : w.status === "skipped" ? "danger" : "accent"}` }, w.status.replace("_", " ")), " ",
         h("span", { class: "muted small" }, [w.set_count ? `${w.set_count} sets` : null, w.distance_km ? `${w.distance_km} km` : null].filter(Boolean).join(" · "))) : null);
     const list = h("div", { class: "action-list", style: { marginTop: ".8rem" } });

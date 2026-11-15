@@ -1,10 +1,11 @@
 // Small D1 helpers.
-import { PROGRAM, resolveDay, templateFor, buildPlan } from "../public/js/program.js";
+import { PROGRAM, resolveDay, templateFor, buildPlan, liftRotation, todayLocal } from "../public/js/program.js";
 
 export async function getSettings(env) {
-  const [{ results }, { results: ov }] = await env.DB.batch([
+  const [{ results }, { results: ov }, { results: lifts }] = await env.DB.batch([
     env.DB.prepare("SELECT key, value FROM settings"),
     env.DB.prepare("SELECT date, template_key FROM schedule_overrides"),
+    env.DB.prepare("SELECT date, template_key FROM workouts WHERE status = 'done' AND template_key IN ('lift_a', 'lift_b', 'lift_c') ORDER BY date, id"),
   ]);
   const s = {};
   for (const r of results || []) s[r.key] = r.value;
@@ -12,6 +13,8 @@ export async function getSettings(env) {
   // Days whose planned session was moved or changed. Read by resolveDay().
   s.overrides = {};
   for (const r of ov || []) s.overrides[r.date] = r.template_key;
+  // Which lift each coming lift day gets, continuing from the last one done. Read by resolveDay().
+  s.rotation = liftRotation(lifts || [], s, todayLocal());
   return s;
 }
 

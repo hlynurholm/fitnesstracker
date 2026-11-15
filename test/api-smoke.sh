@@ -61,11 +61,18 @@ out=$(j -X PUT -d '{"date":"2026-10-27","test_key":"five_k_sec","value":1560}' "
 out=$(j -X PUT -d '{"template_key":"time_trial_5k","distance_km":5.0,"time_sec":1560,"avg_hr":168,"status":"done"}' "$BASE/api/day/2026-10-27/workout"); check "run workout saved" '[[ "$out" == *"\"time_sec\":1560"* ]]'
 WID=$(echo "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 out=$(curl -s -b "$JAR" -F "file=@test/out/run.fit" -F "workout_id=999999" "$BASE/api/uploads"); check "upload with unknown workout_id is a clean 400" '[[ "$out" == *"Unknown workout_id"* ]]'
+# uploads: start clean, otherwise the fixtures count as duplicates of an earlier run
+for uid in $(j "$BASE/api/uploads" | python3 -c 'import json,sys; print(" ".join(str(u["id"]) for u in json.load(sys.stdin) if u.get("filename") in ("run.fit","run2.fit","mfp.csv","weights.csv")))'); do j -X DELETE "$BASE/api/uploads/$uid" >/dev/null; done
 # uploads: FIT attached to the run
 out=$(curl -s -b "$JAR" -F "file=@test/out/run.fit" -F "workout_id=$WID" -F "tz_offset_min=0" "$BASE/api/uploads"); check "FIT upload parsed" '[[ "$out" == *"\"status\":\"parsed\""* && "$out" == *"\"distance_m\":5000"* ]]'
+UPID=$(echo "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["uploads"][0]["upload_id"])')
 out=$(j "$BASE/api/day/2026-10-27"); check "activity attached to the run" '[[ "$out" == *"\"activities\":[{"* ]]'; check "day lists what was recorded on it" '[[ "$out" == *"\"recorded\":[{"* ]]'
-# FIT without workout id on a date with no workout -> auto-creates (date 2026-10-27 already has one, so it attaches)
-out=$(curl -s -b "$JAR" -F "file=@test/out/run.fit" -F "tz_offset_min=0" "$BASE/api/uploads"); check "FIT auto-match by date" '[[ "$out" == *"\"workout_id\":'"$WID"'"* ]]'
+# the same file again is recognised and not ingested twice
+n_before=$(j "$BASE/api/activities" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
+out=$(curl -s -b "$JAR" -F "file=@test/out/run.fit" -F "tz_offset_min=0" "$BASE/api/uploads"); check "duplicate upload reported" '[[ "$out" == *"\"duplicate\":true"* ]]'
+n_after=$(j "$BASE/api/activities" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'); check "duplicate upload creates no activity" '[ "$n_before" = "$n_after" ]'
+# a different FIT without workout id on a date that already has a workout -> attaches to it
+out=$(curl -s -b "$JAR" -F "file=@test/out/run2.fit" -F "tz_offset_min=0" "$BASE/api/uploads"); check "FIT auto-match by date" '[[ "$out" == *"\"workout_id\":'"$WID"'"* && "$out" != *"\"duplicate\":true"* ]]'
 # MFP
 out=$(curl -s -b "$JAR" -F "file=@test/out/mfp.csv" -F "source=myfitnesspal" "$BASE/api/uploads"); check "MFP nutrition parsed (2 days)" '[[ "$out" == *"\"nutrition_days\":2"* ]]'
 out=$(curl -s -b "$JAR" -F "file=@test/out/weights.csv" -F "source=myfitnesspal" "$BASE/api/uploads"); check "MFP weights parsed (2)" '[[ "$out" == *"\"body_metrics\":2"* ]]'
@@ -73,7 +80,7 @@ out=$(j "$BASE/api/nutrition"); check "nutrition day totals" '[[ "$out" == *"\"c
 # activity detail
 AID=$(j "$BASE/api/activities" | sed -n 's/^\[{"id":\([0-9]*\).*/\1/p'); out=$(j "$BASE/api/activities/$AID"); check "activity detail has splits and track" '[[ "$out" == *"\"splits\":[{"* && "$out" == *"\"track\":[{"* ]]'
 # raw download round trip
-curl -s -b "$JAR" -o test/out/roundtrip.fit "$BASE/api/uploads/1/raw"; check "raw FIT round trip identical" 'cmp -s test/out/run.fit test/out/roundtrip.fit'
+curl -s -b "$JAR" -o test/out/roundtrip.fit "$BASE/api/uploads/$UPID/raw"; check "raw FIT round trip identical" 'cmp -s test/out/run.fit test/out/roundtrip.fit'
 # dashboard, export, summary
 out=$(j "$BASE/api/dashboard"); check "dashboard has sets, body, nutrition, activities" '[[ "$out" == *"\"sets\":[{"* && "$out" == *"\"body\":[{"* && "$out" == *"\"nutrition\":[{"* && "$out" == *"\"activities\":[{"* ]]'
 out=$(j "$BASE/api/export.json"); check "export has all tables" '[[ "$out" == *"\"workouts\":[{"* && "$out" == *"\"uploads\":[{"* && "$out" == *"\"tests\":[{"* ]]'

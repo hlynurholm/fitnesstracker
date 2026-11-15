@@ -9,7 +9,7 @@ import { projectDay } from "./projection.js";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{6,80}$/;
 const MAX_RAW_GZ = 1_800_000; // D1 row limit is 2 MB
-const SETTING_KEYS = new Set(["program_start_date", "phase_override", "goal_weight_kg", "calorie_target", "protein_target", "max_hr", "five_k_target_sec", "fun_budget_kcal", "display_name"]);
+const SETTING_KEYS = new Set(["program_start_date", "phase_override", "lift_rotation", "goal_weight_kg", "calorie_target", "protein_target", "max_hr", "five_k_target_sec", "fun_budget_kcal", "display_name"]);
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...headers } });
@@ -73,7 +73,7 @@ async function route(method, p, request, env, url, settings) {
       await setOverride(env, db, ka, settings);
       await pruneEmptyWorkout(env, da, ka);
       await pruneEmptyWorkout(env, db, kb);
-      settings.overrides = await getOverrides(env);
+      Object.assign(settings, await getSettings(env));
       return { a: resolveDay(da, settings), b: resolveDay(db, settings) };
     }
     if (b && b !== "swap" && (method === "PUT" || method === "DELETE")) {
@@ -83,7 +83,7 @@ async function route(method, p, request, env, url, settings) {
       if (key && !PROGRAM.templates[key]) bad("Unknown template");
       const before = resolveDay(date, settings).templateKey;
       await setOverride(env, date, key, settings);
-      settings.overrides = await getOverrides(env);
+      Object.assign(settings, await getSettings(env));
       const after = resolveDay(date, settings);
       if (after.templateKey !== before) await pruneEmptyWorkout(env, date, before);
       return after;
@@ -636,16 +636,28 @@ async function trackFromUpload(env, activity, settings) {
 // Stores one file and everything parsed from it: the upload row, activities matched to a workout, nutrition days and
 // weigh-ins. Used by the upload endpoint and by the Garmin sync. tz is minutes behind UTC, as the browser reports it.
 export async function ingestFile(env, settings, { filename, contentType, bytes, workoutId = null, dateHint = null, sourceHint = null, tz = null }) {
+  // The same file again (a second manual upload, or the sync after a manual upload) is reported, not ingested twice.
+  const sha = await sha256Hex(bytes);
+  const dup = await findDuplicateUpload(env, sha, filename, bytes);
+  if (dup) {
+    if (workoutId && !dup.workout_id) {
+      await env.DB.prepare("UPDATE uploads SET workout_id = ? WHERE id = ?").bind(workoutId, dup.id).run();
+      await env.DB.prepare("UPDATE activities SET workout_id = ? WHERE upload_id = ? AND workout_id IS NULL").bind(workoutId, dup.id).run();
+      await fillWorkoutFromActivities(env, workoutId);
+    }
+    const { results: acts } = await env.DB.prepare("SELECT id, workout_id, date, distance_m, duration_s, avg_hr, avg_pace_s_per_km, best_5k_s, sport FROM activities WHERE upload_id = ? ORDER BY id").bind(dup.id).all();
+    return { upload_id: dup.id, filename, format: dup.format, source: dup.source, status: "duplicate", duplicate: true, uploaded_at: dup.uploaded_at, error: null, activities: acts, nutrition_days: 0, body_metrics: 0 };
+  }
   const maxHr = num(settings.max_hr) || PROGRAM.heartRate.maxBpm;
   const parsed = parseUpload({ filename, contentType, bytes, sourceHint, maxHr });
   const gz = await gzip(bytes);
   const storeRaw = gz.length <= MAX_RAW_GZ;
   const parsedJson = parsed.parsed ? JSON.stringify(parsed.parsed) : null;
   const res = await env.DB.prepare(
-    `INSERT INTO uploads (workout_id, source, format, filename, content_type, size_bytes, raw, raw_encoding, parsed_json, parse_status, parse_error)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO uploads (workout_id, source, format, filename, content_type, size_bytes, raw, raw_encoding, parsed_json, parse_status, parse_error, content_sha256)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(workoutId, parsed.source, parsed.format, filename, contentType || null, bytes.length, storeRaw ? toArrayBuffer(gz) : null, storeRaw ? "gzip" : null,
-    parsedJson && parsedJson.length < 1_500_000 ? parsedJson : null, parsed.status, parsed.error || (storeRaw ? null : "Raw file too large to store (over 1.8 MB compressed); parsed data kept")).run();
+    parsedJson && parsedJson.length < 1_500_000 ? parsedJson : null, parsed.status, parsed.error || (storeRaw ? null : "Raw file too large to store (over 1.8 MB compressed); parsed data kept"), sha).run();
   const uploadId = res.meta.last_row_id;
   const out = { upload_id: uploadId, filename, format: parsed.format, source: parsed.source, status: parsed.status, error: parsed.error, activities: [], nutrition_days: 0, body_metrics: 0 };
 
@@ -658,13 +670,40 @@ export async function ingestFile(env, settings, { filename, contentType, bytes, 
     if (wid) await fillWorkoutFromActivities(env, wid);
     out.activities.push({ id, workout_id: wid, date, distance_m: act.distance_m, duration_s: act.duration_s, avg_hr: act.avg_hr, avg_pace_s_per_km: act.avg_pace_s_per_km, best_5k_s: act.best_5k_s, sport: act.sport });
   }
-  if (workoutId && !parsed.activities.length) await env.DB.prepare("UPDATE uploads SET workout_id = ? WHERE id = ?").bind(workoutId, uploadId).run();
+  const matched = new Set(out.activities.map((a) => a.workout_id).filter(Boolean));
+  const rowWorkout = workoutId || (matched.size === 1 ? [...matched][0] : null);
+  if (rowWorkout) await env.DB.prepare("UPDATE uploads SET workout_id = ? WHERE id = ?").bind(rowWorkout, uploadId).run();
   for (const d of parsed.nutrition_days) { await upsertNutritionDay(env, d, uploadId); out.nutrition_days++; }
   for (const m of parsed.body_metrics) {
     await env.DB.prepare(`INSERT INTO body_metrics (date, weight_kg, source) VALUES (?, ?, 'myfitnesspal') ON CONFLICT(date, source) DO UPDATE SET weight_kg = excluded.weight_kg, updated_at = datetime('now')`).bind(m.date, m.weight_kg).run();
     out.body_metrics++;
   }
   return out;
+}
+
+async function sha256Hex(bytes) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// An upload with the same content, by hash, or for rows stored before hashes existed, by filename and size with the
+// stored bytes compared. A legacy match gets its hash filled in so the next check is cheap.
+async function findDuplicateUpload(env, sha, filename, bytes) {
+  const cols = "id, workout_id, source, format, uploaded_at";
+  const byHash = await env.DB.prepare(`SELECT ${cols} FROM uploads WHERE content_sha256 = ? ORDER BY id LIMIT 1`).bind(sha).first();
+  if (byHash) return byHash;
+  const { results } = await env.DB.prepare(`SELECT ${cols}, raw, raw_encoding FROM uploads WHERE content_sha256 IS NULL AND filename = ? AND size_bytes = ? AND raw IS NOT NULL ORDER BY id LIMIT 5`).bind(filename, bytes.length).all();
+  for (const row of results) {
+    let stored = blobToBytes(row.raw);
+    if (row.raw_encoding === "gzip") stored = await gunzip(stored);
+    if (stored.length !== bytes.length) continue;
+    let same = true;
+    for (let i = 0; i < bytes.length; i++) if (stored[i] !== bytes[i]) { same = false; break; }
+    if (!same) continue;
+    await env.DB.prepare("UPDATE uploads SET content_sha256 = ? WHERE id = ?").bind(sha, row.id).run();
+    return { id: row.id, workout_id: row.workout_id, source: row.source, format: row.format, uploaded_at: row.uploaded_at };
+  }
+  return null;
 }
 
 // ---------- dashboard / export ----------

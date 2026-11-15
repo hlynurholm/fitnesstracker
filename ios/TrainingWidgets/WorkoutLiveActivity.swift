@@ -75,6 +75,17 @@ private struct Look {
     }
 }
 
+/// The heading face on the lock screen. There the weight and width set through `Font` alone came out as the regular
+/// cut, so both are also stated as view modifiers.
+private struct Heading: ViewModifier {
+    let size: CGFloat
+    let weight: Font.Weight
+    init(_ size: CGFloat, _ weight: Font.Weight) { self.size = size; self.weight = weight }
+    func body(content: Content) -> some View {
+        content.font(.system(size: size, weight: weight).width(Theme.Typography.headingWidth)).fontWeight(weight).fontWidth(Theme.Typography.headingWidth)
+    }
+}
+
 private struct LockScreenView: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
@@ -87,18 +98,18 @@ private struct LockScreenView: View {
         let showsElapsed = state.countdown != nil || state.restSince != nil
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             HStack(spacing: Theme.Space.s) {
-                Label(attributes.name.uppercased(), systemImage: attributes.icon).font(Theme.Typography.label).foregroundStyle(ink)
+                Label(attributes.name.uppercased(), systemImage: attributes.icon).modifier(Heading(13, .bold)).foregroundStyle(ink)
                 Spacer()
                 if showsElapsed {
-                    Text(attributes.startedAt, style: .timer).font(Theme.Typography.label).monospacedDigit().foregroundStyle(soft)
+                    Text(attributes.startedAt, style: .timer).modifier(Heading(13, .bold)).monospacedDigit().foregroundStyle(soft)
                         .multilineTextAlignment(.trailing).frame(maxWidth: 80)
                 } else {
-                    Text(state.progress.uppercased()).font(Theme.Typography.label).foregroundStyle(soft).lineLimit(1)
+                    Text(state.progress.uppercased()).modifier(Heading(13, .bold)).foregroundStyle(soft).lineLimit(1)
                 }
             }
             HStack(alignment: .center, spacing: Theme.Space.m) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(state.title.uppercased()).font(Theme.Typography.title).foregroundStyle(ink).lineLimit(1).minimumScaleFactor(0.6)
+                    Text(state.title.uppercased()).modifier(Heading(30, .heavy)).foregroundStyle(ink).lineLimit(1).minimumScaleFactor(0.6)
                     // Shrinks before it is cut: "Set 1 of 4 · 122.5 kg × 4 reps" has to be readable whole.
                     Text(state.detail).font(Theme.Typography.callout.weight(.medium)).foregroundStyle(soft).lineLimit(2).minimumScaleFactor(0.75)
                 }
@@ -106,10 +117,10 @@ private struct LockScreenView: View {
                 VStack(alignment: .trailing, spacing: 0) {
                     // On the dimmed always-on lock screen the system swaps the timer for text like "<1 minute": let it shrink, not truncate.
                     PhaseTimer(state: state, startedAt: attributes.startedAt)
-                        .font(Theme.Typography.timer).foregroundStyle(ink)
+                        .modifier(Heading(38, .heavy)).monospacedDigit().foregroundStyle(ink)
                         .lineLimit(1).minimumScaleFactor(0.4)
                         .multilineTextAlignment(.trailing).frame(maxWidth: 120)
-                    Text(state.timerLabel).font(Theme.Typography.label).foregroundStyle(soft)
+                    Text(state.timerLabel).modifier(Heading(13, .bold)).foregroundStyle(soft)
                 }
             }
             if let range = state.countdown {

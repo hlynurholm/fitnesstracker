@@ -289,24 +289,10 @@ private struct RouteMap: View {
     @State private var picked: Int?
     @State private var stripWidth: CGFloat = 0
     @State private var position: MapCameraPosition = .automatic
-    @AppStorage("runGraph") private var graph = Graph.elevation
-    @AppStorage("runMapLook") private var look = Look.standard
-    @AppStorage("runMap3D") private var threeD = false
-
-    /// What the strip under the map draws from start to finish.
-    enum Graph: String, CaseIterable {
-        case elevation, pace, heart
-        var title: String { self == .elevation ? "Elevation" : self == .pace ? "Pace" : "Heart rate" }
-        var icon: String { self == .elevation ? "mountain.2" : self == .pace ? "speedometer" : "heart" }
-        /// How tall a stretch of the run is drawn, before scaling: higher ground, more speed, higher heart rate.
-        func value(_ p: RunRoute.Point) -> Double? { self == .elevation ? p.alt : self == .pace ? p.effort : p.hr }
-    }
-
-    enum Look: String, CaseIterable {
-        case standard, satellite, hybrid
-        var title: String { rawValue.capitalizedFirst }
-        var icon: String { self == .standard ? "map" : self == .satellite ? "globe.europe.africa" : "square.3.layers.3d" }
-    }
+    @State private var choice = MapChoice.standard
+    private var graph: RunGraph { choice.graph }
+    private var look: MapLook { choice.look }
+    private var threeD: Bool { choice.threeD }
 
     private var style: MapStyle {
         let elevation: MapStyle.Elevation = threeD ? .realistic : .flat
@@ -343,12 +329,12 @@ private struct RouteMap: View {
                                 .accessibilityLabel("Kilometre \(mark.km)")
                         }
                     }
-                    Annotation("Start", coordinate: route.points[0].coordinate, anchor: .center) {
+                    Annotation("", coordinate: route.points[0].coordinate, anchor: .center) {
                         Circle().fill(Theme.Palette.surface).frame(width: 14, height: 14).overlay(Circle().stroke(Theme.Palette.ok, lineWidth: 4))
                     }
-                    Annotation("Finish", coordinate: route.points[route.points.count - 1].coordinate, anchor: .center) {
-                        Image(systemName: "flag.checkered").font(.caption2.weight(.bold)).foregroundStyle(.white)
-                            .frame(width: 22, height: 22).background(Theme.Palette.text.opacity(0.85), in: Circle())
+                    Annotation("", coordinate: route.points[route.points.count - 1].coordinate, anchor: .center) {
+                        Image(systemName: "flag.checkered").font(.caption2.weight(.bold)).foregroundStyle(Theme.Palette.background)
+                            .frame(width: 22, height: 22).background(Theme.Palette.text, in: Circle()).accessibilityLabel("Finish")
                     }
                     if let p = picked.map({ route.points[$0] }) {
                         Annotation("", coordinate: p.coordinate, anchor: .center) {
@@ -359,43 +345,43 @@ private struct RouteMap: View {
                 }
                 .mapStyle(style)
                 .onTapGesture { picked = nearest(to: $0, proxy) } // a tap off the route clears the point
-                .safeAreaInset(edge: .top, spacing: 0) { readout }
-                .safeAreaInset(edge: .bottom, spacing: 0) { strip }
+                // The numbers and the strip float on the map as two pieces of glass.
+                .safeAreaInset(edge: .top, spacing: 0) { readout.padding(Theme.Space.s) }
+                .safeAreaInset(edge: .bottom, spacing: 0) { strip.padding(Theme.Space.s) }
             }
             .frame(height: 420)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
             .contextMenu { options }
+            .onAppear { choice = MapChoice.load(for: activity.id) }
             .onChange(of: threeD, initial: true) { withAnimation { position = camera } }
-            HStack(spacing: Theme.Space.s) {
-                Text("slower").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
-                LinearGradient(colors: stride(from: 0.0, through: 1.0, by: 0.25).map { Theme.Palette.effort($0) }, startPoint: .leading, endPoint: .trailing)
-                    .frame(height: 5).clipShape(Capsule())
-                Text("faster").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
-            }
-            .padding(.horizontal, Theme.Space.xs)
-            Text("The strip shows \(shownGraph.title.lowercased()). Drag along it or tap the route to read any point. Touch and hold the map to change the graph or the map.")
-                .font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).padding(.horizontal, Theme.Space.xs)
+            Text("Drag the strip or tap the route to read a point. Touch and hold the map for the graph and map options.")
+                .font(Theme.Typography.caption).muted().padding(.horizontal, Theme.Space.xs)
         }
     }
 
     /// The graphs this recording has readings for.
-    private var graphs: [Graph] { Graph.allCases.filter { g in route.points.contains { g.value($0) != nil } } }
+    private var graphs: [RunGraph] { RunGraph.allCases.filter { g in route.points.contains { g.value($0) != nil } } }
     /// The chosen graph, or elevation's stand-in when this recording lacks it.
-    private var shownGraph: Graph { graphs.contains(graph) ? graph : graphs.first ?? .pace }
+    private var shownGraph: RunGraph { graphs.contains(graph) ? graph : graphs.first ?? .pace }
+
+    /// A choice made on this map is kept for this run only. Runs without one follow the defaults in Settings.
+    private func pick<Value>(_ part: WritableKeyPath<MapChoice, Value>, shown: Value) -> Binding<Value> {
+        Binding(get: { shown }, set: { choice[keyPath: part] = $0; choice.save(for: activity.id) })
+    }
 
     /// The menu behind a long press on the map.
     @ViewBuilder
     private var options: some View {
-        Picker("Graph under the map", selection: Binding(get: { shownGraph }, set: { graph = $0 })) {
+        Picker("Graph under the map", selection: pick(\.graph, shown: shownGraph)) {
             ForEach(graphs, id: \.self) { Label($0.title, systemImage: $0.icon).tag($0) }
         }
         .pickerStyle(.inline)
-        Picker("Map", selection: $look) {
-            ForEach(Look.allCases, id: \.self) { Label($0.title, systemImage: $0.icon).tag($0) }
+        Picker("Map", selection: pick(\.look, shown: look)) {
+            ForEach(MapLook.allCases, id: \.self) { Label($0.title, systemImage: $0.icon).tag($0) }
         }
         .pickerStyle(.inline)
-        Picker("View", selection: $threeD) {
+        Picker("View", selection: pick(\.threeD, shown: threeD)) {
             Label("2D", systemImage: "square").tag(false)
             Label("3D", systemImage: "view.3d").tag(true)
         }
@@ -431,35 +417,80 @@ private struct RouteMap: View {
             }
         }
         .padding(.horizontal, Theme.Space.m).padding(.vertical, Theme.Space.s)
-        .background(.regularMaterial)
+        .glass(in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
     /// The run from start to finish as bars, as tall as the chosen graph's reading and coloured by pace. Drag across
     /// it to move the point.
     private var strip: some View {
-        Canvas { context, size in
-            let count = min(route.points.count, 80)
-            let all = route.points.compactMap(shownGraph.value), low = all.min() ?? 0, high = all.max() ?? 0
-            let width = size.width / CGFloat(count)
-            for b in 0..<count {
-                let part = route.points[(b * route.points.count / count)..<max((b + 1) * route.points.count / count, b * route.points.count / count + 1)]
-                let values = part.compactMap(shownGraph.value)
-                let level = high > low && !values.isEmpty ? (values.reduce(0, +) / Double(values.count) - low) / (high - low) : 0.5
-                let height = size.height * (0.25 + 0.75 * level)
-                let bar = CGRect(x: CGFloat(b) * width + 0.75, y: size.height - height, width: max(width - 1.5, 1), height: height)
-                let passed = picked.map { part.startIndex <= $0 } ?? true
-                context.fill(Path(roundedRect: bar, cornerRadius: 1.5), with: .color(Theme.Palette.effort(part.map(\.effort).reduce(0, +) / Double(part.count)).opacity(passed ? 1 : 0.3)))
+        VStack(spacing: Theme.Space.xs) {
+            Canvas { context, size in
+                let count = min(route.points.count, 80)
+                let all = route.points.compactMap(shownGraph.value), low = all.min() ?? 0, high = all.max() ?? 0
+                let width = size.width / CGFloat(count)
+                for b in 0..<count {
+                    let part = route.points[(b * route.points.count / count)..<max((b + 1) * route.points.count / count, b * route.points.count / count + 1)]
+                    let values = part.compactMap(shownGraph.value)
+                    let level = high > low && !values.isEmpty ? (values.reduce(0, +) / Double(values.count) - low) / (high - low) : 0.5
+                    let height = size.height * (0.25 + 0.75 * level)
+                    let bar = CGRect(x: CGFloat(b) * width + 0.75, y: size.height - height, width: max(width - 1.5, 1), height: height)
+                    let passed = picked.map { part.startIndex <= $0 } ?? true
+                    context.fill(Path(roundedRect: bar, cornerRadius: 1.5), with: .color(Theme.Palette.effort(part.map(\.effort).reduce(0, +) / Double(part.count)).opacity(passed ? 1 : 0.3)))
+                }
+            }
+            .frame(height: 36)
+            .contentShape(Rectangle())
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
+            .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                picked = Int((min(max(drag.location.x / max(stripWidth, 1), 0), 1) * Double(route.points.count - 1)).rounded())
+            })
+            .accessibilityLabel("\(shownGraph.title) along the run. Drag to move the point.")
+            // What the strip shows, and what the colours on it and on the route mean.
+            HStack(spacing: Theme.Space.s) {
+                Text(shownGraph.title.uppercased()).font(Theme.Typography.label)
+                Spacer(minLength: Theme.Space.s)
+                Text("slower").font(Theme.Typography.label).muted()
+                LinearGradient(colors: stride(from: 0.0, through: 1.0, by: 0.25).map { Theme.Palette.effort($0) }, startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 64, height: 4).clipShape(Capsule())
+                Text("faster").font(Theme.Typography.label).muted()
             }
         }
-        .frame(height: 36)
-        .contentShape(Rectangle())
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
-        .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
-            picked = Int((min(max(drag.location.x / max(stripWidth, 1), 0), 1) * Double(route.points.count - 1)).rounded())
-        })
-        .accessibilityLabel("\(shownGraph.title) along the run. Drag to move the point.")
         .padding(.horizontal, Theme.Space.m).padding(.vertical, Theme.Space.s)
-        .background(.regularMaterial)
+        .glass(in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
     }
+}
+
+/// What the strip under a run's map draws from start to finish.
+enum RunGraph: String, CaseIterable, Codable {
+    case elevation, pace, heart
+    var title: String { self == .elevation ? "Elevation" : self == .pace ? "Pace" : "Heart rate" }
+    var icon: String { self == .elevation ? "mountain.2" : self == .pace ? "speedometer" : "heart" }
+    /// How tall a stretch of the run is drawn, before scaling: higher ground, more speed, higher heart rate.
+    func value(_ p: RunRoute.Point) -> Double? { self == .elevation ? p.alt : self == .pace ? p.effort : p.hr }
+}
+
+enum MapLook: String, CaseIterable, Codable {
+    case standard, satellite, hybrid
+    var title: String { rawValue.capitalizedFirst }
+    var icon: String { self == .standard ? "map" : self == .satellite ? "globe.europe.africa" : "square.3.layers.3d" }
+}
+
+/// How a run's map is drawn. The defaults are set in Settings; a run whose map was changed by hand keeps its own.
+struct MapChoice: Codable, Equatable {
+    var look = MapLook.standard
+    var threeD = false
+    var graph = RunGraph.elevation
+    static let standard = MapChoice()
+
+    private static let defaults = UserDefaults.standard
+    private static func decode(_ key: String) -> MapChoice? { defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(MapChoice.self, from: $0) } }
+
+    /// The choice for maps that have none of their own.
+    static var preferred: MapChoice {
+        get { decode("mapDefault") ?? .standard }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "mapDefault") }
+    }
+    static func load(for run: Int) -> MapChoice { decode("mapRun_\(run)") ?? preferred }
+    func save(for run: Int) { Self.defaults.set(try? JSONEncoder().encode(self), forKey: "mapRun_\(run)") }
 }

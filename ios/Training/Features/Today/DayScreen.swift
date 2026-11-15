@@ -40,6 +40,7 @@ private struct DayContent: View {
     let isRoot: Bool
     let go: (String) -> Void
     @State private var showChange = false
+    @State private var showCalendar = false
     @State private var showFinish = false
     @State private var confirmDelete = false
     @Environment(\.scenePhase) private var scenePhase
@@ -49,6 +50,22 @@ private struct DayContent: View {
             if let day = model.day {
                 // The week strip keeps its identity across days, so it never redraws from scratch.
                 WeekStrip(week: model.data?.week ?? [], selected: selected, go: go)
+                // Getting around, kept in the page instead of in the bar at the top: the month, back to today, and a
+                // day back or forward.
+                HStack(spacing: Theme.Space.s) {
+                    Button { withAnimation(.snappy) { showCalendar.toggle() } } label: {
+                        Label(showCalendar ? "Hide calendar" : "Calendar", systemImage: showCalendar ? "chevron.up" : "calendar").font(Theme.Typography.label)
+                            .padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
+                    }
+                    Spacer(minLength: 0)
+                    if selected != Day.today() {
+                        Button { go(Day.today()) } label: { Text("Today").font(Theme.Typography.label).padding(.horizontal, Theme.Space.m).frame(height: 36).glass() }
+                    }
+                    Button { go(Day.add(selected, -1)) } label: { Image(systemName: "chevron.left").font(.footnote.weight(.bold)).frame(width: 36, height: 36).glass(in: Circle()) }.accessibilityLabel("Previous day")
+                    Button { go(Day.add(selected, 1)) } label: { Image(systemName: "chevron.right").font(.footnote.weight(.bold)).frame(width: 36, height: 36).glass(in: Circle()) }.accessibilityLabel("Next day")
+                }
+                .buttonStyle(.plain).foregroundStyle(Theme.Palette.text)
+                if showCalendar { CalendarPanel(selected: selected) { date in withAnimation(.snappy) { showCalendar = false }; go(date) } }
                 // Beyond the concrete planning window there is no session yet, only an outlook.
                 if Outlook(day.horizon) != .concrete, !day.moved, (model.data?.workouts ?? []).isEmpty {
                     OutlookCard(day: day).id(model.date)
@@ -75,18 +92,6 @@ private struct DayContent: View {
             }
         }
         .navigationTitle(selected == Day.today() ? "Today" : Day.label(selected))
-        .toolbar {
-            if isRoot {
-                ToolbarItem(placement: .topBarLeading) {
-                    NavigationLink { SettingsScreen() } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
-                }
-            }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if selected != Day.today() { Button("Today") { go(Day.today()) } }
-                Button { go(Day.add(selected, -1)) } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Previous day")
-                Button { go(Day.add(selected, 1)) } label: { Image(systemName: "chevron.right") }.accessibilityLabel("Next day")
-            }
-        }
         .refreshable { await model.load() }
         .safeAreaInset(edge: .bottom) { if model.template.kind == "lift", model.mode == .log { TimerBar(model: model) } }
         .toast($model.toast)

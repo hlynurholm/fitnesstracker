@@ -61,10 +61,11 @@ private struct RootView: View {
     private var tabs: some View {
         TabView(selection: $tab) {
             Tab("Home", systemImage: "square.grid.2x2.fill", value: 0) { NavigationStack { HomeScreen { tab = 1 } } }
-            Tab("Today", systemImage: "calendar.day.timeline.left", value: 1) { NavigationStack { DayScreen(date: Day.today()) } }
-            Tab("Calendar", systemImage: "calendar", value: 2) { NavigationStack { CalendarScreen() } }
+            // Today holds the calendar too: the week strip opens into the month.
+            Tab("Today", systemImage: "calendar", value: 1) { NavigationStack { DayScreen(date: Day.today()) } }
             Tab("Progress", systemImage: "chart.line.uptrend.xyaxis", value: 3) { NavigationStack { ProgressScreen() } }
             Tab("Diet", systemImage: "fork.knife", value: 4) { NavigationStack { DietScreen() } }
+            Tab("Settings", systemImage: "gearshape", value: 5) { NavigationStack { SettingsScreen() } }
         }
     }
 }

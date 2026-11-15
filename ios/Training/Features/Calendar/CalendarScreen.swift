@@ -4,25 +4,29 @@ import SwiftUI
 let pickableTemplates = ["lift_a", "lift_b", "lift_c", "intervals_6x2", "intervals_5x3", "intervals_4x4", "time_trial_5k", "easy_run", "other", "rest_walk"]
 private let shortNames = ["lift_a": "Lift A", "lift_b": "Lift B", "lift_c": "Lift C", "intervals_6x2": "Int", "intervals_5x3": "Int", "intervals_4x4": "Int", "time_trial_5k": "5 km", "easy_run": "Easy", "rest_walk": "Off", "rest_padel": "Padel", "other": "Other"]
 
-/// Month grid of planned sessions, or a list of everything logged.
-struct CalendarScreen: View {
-    @State private var month = String(Day.today().prefix(7)) + "-01"
+/// Month grid of planned sessions, or a list of everything logged. It sits inside the Today tab, under the week
+/// strip; picking a day shows that day there.
+struct CalendarPanel: View {
+    let pick: (String) -> Void
+    @State private var month: String
     @State private var schedule: Schedule?
     @State private var history: [Workout] = []
     @State private var error: String?
     @State private var showList = false
-    @State private var openDay: String?
+
+    /// Opens on the month of the day that is on screen.
+    init(selected: String, pick: @escaping (String) -> Void) {
+        self.pick = pick
+        _month = State(initialValue: String(selected.prefix(7)) + "-01")
+    }
 
     var body: some View {
-        Screen {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
             Picker("View", selection: $showList) { Text("Month").tag(false); Text("List").tag(true) }.pickerStyle(.segmented)
             if let error { ErrorCard(message: error) { await load() } }
             if showList { list } else { grid }
         }
-        .navigationTitle("Calendar")
-        .navigationDestination(item: $openDay) { DayScreen(date: $0) }
         .task(id: "\(month)\(showList)") { await load() }
-        .refreshable { await load() }
     }
 
     @ViewBuilder
@@ -39,7 +43,7 @@ struct CalendarScreen: View {
             LazyVGrid(columns: columns, spacing: Theme.Space.xs) {
                 ForEach(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], id: \.self) { Text($0).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted) }
                 ForEach(schedule?.days ?? []) { d in
-                    Button { openDay = d.date } label: { cell(d) }.buttonStyle(.plain)
+                    Button { pick(d.date) } label: { cell(d) }.buttonStyle(.plain)
                 }
             }
             HStack(spacing: Theme.Space.m) {
@@ -98,7 +102,7 @@ struct CalendarScreen: View {
         let program = AppModel.shared.program
         if history.isEmpty, error == nil { Text("Nothing logged yet.").foregroundStyle(Theme.Palette.muted).card() }
         ForEach(history) { w in
-            Button { openDay = w.date } label: {
+            Button { pick(w.date) } label: {
                 Row(title: "\(Day.label(w.date)) · \(program?.templates[w.template_key]?.name ?? w.template_key)",
                     subtitle: [w.set_count.flatMap { $0 > 0 ? "\($0) sets" : nil }, w.volume_kg.flatMap { $0 > 0 ? "\(Fmt.whole($0)) kg" : nil }, w.distance_km.map { "\(Fmt.number($0)) km" }, w.time_sec.map { Fmt.time($0) }, w.notes].compactMap { $0 }.joined(separator: " · ")) {
                     Badge(w.status.replacingOccurrences(of: "_", with: " "), tone: w.status == "done" ? .ok : w.status == "skipped" ? .danger : .accent)

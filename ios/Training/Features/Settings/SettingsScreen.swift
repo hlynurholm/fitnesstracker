@@ -39,6 +39,7 @@ struct ConnectionForm: View {
 }
 
 struct SettingsScreen: View {
+    @State private var maps = MapChoice.preferred
     @State private var values: [String: String] = [:]
     @State private var error: String?
     @State private var toast: String?
@@ -56,6 +57,21 @@ struct SettingsScreen: View {
                 }
             }
             .buttonStyle(.plain).card()
+
+            VStack(alignment: .leading, spacing: Theme.Space.m) {
+                CardTitle("Maps", note: "for runs you have not set by hand")
+                LabeledField(label: "Map") {
+                    Picker("Map", selection: $maps.look) { ForEach(MapLook.allCases, id: \.self) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+                }
+                LabeledField(label: "View") {
+                    Picker("View", selection: $maps.threeD) { Text("2D").tag(false); Text("3D").tag(true) }.pickerStyle(.segmented)
+                }
+                LabeledField(label: "Graph under the map") {
+                    Picker("Graph", selection: $maps.graph) { ForEach(RunGraph.allCases, id: \.self) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+                }
+            }
+            .card()
+            .onChange(of: maps) { _, new in MapChoice.preferred = new }
 
             VStack(alignment: .leading, spacing: Theme.Space.m) {
                 CardTitle("Plan")

@@ -3,7 +3,7 @@ import SwiftUI
 /// The landing page: a grid of data widgets from the watch and from training.
 ///
 /// Normal mode: touch and hold a widget for its settings (width, range of days shown, remove).
-/// Edit mode (the grid button): widgets can be dragged to a new place, resized with the handle in their bottom
+/// Edit mode (the Edit Home button at the bottom of the page): widgets can be dragged to a new place, resized with the handle in their bottom
 /// right corner, removed with the minus in their top left corner, and added with the plus button.
 /// The layout is saved on the phone.
 struct HomeScreen: View {
@@ -37,22 +37,26 @@ struct HomeScreen: View {
                 }
             }
             if !model.loaded { ProgressView().frame(maxWidth: .infinity).padding(.top, 60) }
+            // Editing starts from the very end of the page, out of the way.
+            if model.loaded, !editing {
+                Button { startEditing() } label: {
+                    Label("Edit Home", systemImage: "square.grid.2x2").font(Theme.Typography.label).foregroundStyle(Theme.Palette.text)
+                        .padding(.horizontal, Theme.Space.l).frame(height: 40).glass()
+                }
+                .buttonStyle(.plain).frame(maxWidth: .infinity).padding(.top, Theme.Space.m)
+            }
         }
         .navigationTitle("Home")
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                if editing {
-                    Button("Done") { withAnimation(.snappy) { editing = false; dragging = nil } }.fontWeight(.semibold)
-                } else {
-                    NavigationLink { SettingsScreen() } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
+        // While editing, the two controls sit above the tab bar.
+        .safeAreaInset(edge: .bottom) {
+            if editing {
+                HStack(spacing: Theme.Space.m) {
+                    Button { adding = true } label: { Label("Add widget", systemImage: "plus").font(Theme.Typography.label).padding(.horizontal, Theme.Space.l).frame(height: 44).glass() }
+                    Button { withAnimation(.snappy) { editing = false; dragging = nil } } label: {
+                        Text("Done").font(Theme.Typography.label).foregroundStyle(.white).padding(.horizontal, Theme.Space.xl).frame(height: 44).background(Theme.Palette.accent, in: Capsule())
+                    }
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                if editing {
-                    Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add widget")
-                } else {
-                    Button { startEditing() } label: { Image(systemName: "square.grid.2x2") }.accessibilityLabel("Edit dashboard")
-                }
+                .buttonStyle(.plain).foregroundStyle(Theme.Palette.text).padding(.bottom, Theme.Space.s)
             }
         }
         .sheet(isPresented: $adding) { AddWidgetSheet(model: model).presentationDetents([.medium, .large]) }

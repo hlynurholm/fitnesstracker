@@ -319,7 +319,8 @@ struct Spark: View {
     var color: Color = Theme.Palette.accent
     /// Dashed reference line, for a daily goal.
     var goal: Double? = nil
-    var height: CGFloat = 44
+    /// nil lets the chart fill the height it is given.
+    var height: CGFloat? = 44
 
     var body: some View {
         // One slot per day, named by its position, so a day without a value leaves a gap instead of closing up.
@@ -367,7 +368,8 @@ struct BandSpark: View {
     /// Readings under this are drawn as low.
     var floor: Double? = nil
     var color: Color = Theme.Palette.accent
-    var height: CGFloat = 44
+    /// nil lets the chart fill the height it is given.
+    var height: CGFloat? = 44
 
     private func tone(_ index: Int, _ value: Double) -> Color {
         if let floor, value < floor { return Theme.Palette.danger }

@@ -281,11 +281,13 @@ struct RunDetail: View {
 /// The route on a map with the run's numbers on it: a marker at every kilometre, the totals along the top, and a
 /// point that moves along the route (drag the strip, or tap the route) to read pace, heart rate and height there.
 /// Holding the map opens a menu for what the strip shows and how the map is drawn; both choices are remembered.
-private struct RouteMap: View {
+struct RouteMap: View {
     let route: RunRoute
     let activity: GarminActivity
     /// No panning or zooming, for a map inside a page that scrolls.
     var fixed = false
+    /// nil lets the map fill the height it is given, and leaves out the line of help under it (for a widget).
+    var height: CGFloat? = 420
     @State private var picked: Int?
     @State private var stripWidth: CGFloat = 0
     @State private var position: MapCameraPosition = .automatic
@@ -349,14 +351,16 @@ private struct RouteMap: View {
                 .safeAreaInset(edge: .top, spacing: 0) { readout.padding(Theme.Space.s) }
                 .safeAreaInset(edge: .bottom, spacing: 0) { strip.padding(Theme.Space.s) }
             }
-            .frame(height: 420)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .frame(height: height)
+            .clipShape(RoundedRectangle(cornerRadius: height == nil ? Theme.Radius.control : Theme.Radius.card, style: .continuous))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
             .contextMenu { options }
             .onAppear { choice = MapChoice.load(for: activity.id) }
             .onChange(of: threeD, initial: true) { withAnimation { position = camera } }
-            Text("Drag the strip or tap the route to read a point. Touch and hold the map for the graph and map options.")
-                .font(Theme.Typography.caption).muted().padding(.horizontal, Theme.Space.xs)
+            if height != nil {
+                Text("Drag the strip or tap the route to read a point. Touch and hold the map for the graph and map options.")
+                    .font(Theme.Typography.caption).muted().padding(.horizontal, Theme.Space.xs)
+            }
         }
     }
 

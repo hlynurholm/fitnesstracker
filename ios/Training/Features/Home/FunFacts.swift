@@ -39,7 +39,7 @@ struct FactSheet {
         case .heroMiddle: return pairs(Array(rest.prefix(2))) + [[hero]] + pairs(Array(rest.dropFirst(2).prefix(2)))
         case .twoHeroes:
             let second = rest.remove(at: rest.firstIndex { $0.progress != nil } ?? 0)
-            return [[hero]] + pairs(Array(rest.prefix(2))) + [[second]] + pairs(Array(rest.dropFirst(2).prefix(2)))
+            return [[hero]] + pairs(Array(rest.prefix(2))) + [[second]]
         case .list: return []
         }
     }

@@ -67,6 +67,25 @@ enum CardKind: String, CaseIterable, Codable {
     var hasRange: Bool { ![.today, .lastRun, .week, .facts, .all].contains(self) }
 }
 
+/// A widget's footprint as shares of the screen's width, width × height. The raw value is saved in the layout.
+enum WidgetSize: String, Codable, CaseIterable {
+    case small, square, strip, wide, large
+    /// Spans both columns.
+    var isWide: Bool { self == .strip || self == .wide || self == .large }
+    /// Height in quarters of the screen's width.
+    var rows: Int { self == .large ? 4 : self == .small || self == .strip ? 1 : 2 }
+    var label: String {
+        switch self {
+        case .small: "½ × ¼"
+        case .square: "½ × ½"
+        case .strip: "1 × ¼"
+        case .wide: "1 × ½"
+        case .large: "1 × 1"
+        }
+    }
+    var next: WidgetSize { Self.allCases[(Self.allCases.firstIndex(of: self)! + 1) % Self.allCases.count] }
+}
+
 /// The ranges a widget's chart can cover.
 struct RangeOption: Identifiable {
     let days: Int
@@ -126,6 +145,8 @@ struct MetricSpec {
 struct CardSetting: Codable, Identifiable, Hashable {
     var kind: CardKind
     var wide: Bool
+    /// One of the five sizes. nil is a layout saved before sizes existed: full width was 1 × ½, half width ½ × ½.
+    var size: WidgetSize? = nil
     var hidden = false
     /// Days the card's chart covers. nil is the card's own default.
     var range: Int? = nil
@@ -156,6 +177,7 @@ struct CardSetting: Codable, Identifiable, Hashable {
         return kind == .weight ? .line : MetricSpec.all[kind]?.style ?? .bars
     }
     var id: String { kind.rawValue }
+    var shape: WidgetSize { size ?? (kind == .facts ? .large : kind == .all ? .strip : wide || kind.alwaysWide ? .wide : .square) }
 
     static let defaults: [CardSetting] = [
         .init(kind: .today, wide: true), .init(kind: .lastRun, wide: true), .init(kind: .steps, wide: false), .init(kind: .restingHR, wide: false),
@@ -168,14 +190,22 @@ struct CardSetting: Codable, Identifiable, Hashable {
     ]
 }
 
+/// What the session widget shows: a day's planned session and how far along it is.
+struct NextSession {
+    let day: DayInfo
+    let isTomorrow: Bool
+    let status: String?
+    let started: Bool
+}
+
 /// Data and layout for the dashboard: the watch's daily metrics, the training data the other tabs use, and which
 /// cards are shown in what order and width. The layout is saved on the phone.
 @MainActor @Observable
 final class HomeModel {
     private(set) var days: [String: [String: MetricDay.Value]] = [:]
     private(set) var dash: Dashboard?
-    /// Tomorrow's planned session, shown once today's is done.
-    private(set) var tomorrow: ScheduleDay?
+    /// Tomorrow as the Today tab would show it, for the session widget once today's session is done.
+    private(set) var tomorrow: DayResponse?
     /// The most recent run from the watch, with its track.
     private(set) var lastRun: GarminActivity?
     private(set) var error: String?
@@ -197,6 +227,8 @@ final class HomeModel {
             merged.insert(card, at: min(merged.count, (merged.firstIndex { $0.kind == .today } ?? -1) + 1))
         }
         layout = merged
+        // TRAINING_LAYOUT holds a layout as JSON, to look at an arrangement in the simulator without building it by hand.
+        if let test = ProcessInfo.processInfo.environment["TRAINING_LAYOUT"], let cards = try? JSONDecoder().decode([CardSetting].self, from: Data(test.utf8)) { layout = cards }
     }
 
     func load() async {
@@ -208,7 +240,7 @@ final class HomeModel {
         loaded = true
         // Extras for single widgets. Each is optional: a widget without its data just stays off the dashboard.
         let next = Day.add(today, 1)
-        if let s: Schedule = try? await API.shared.get("/api/schedule?from=\(next)&to=\(next)", cache: true) { tomorrow = s.days.first }
+        if let day: DayResponse = try? await API.shared.get("/api/day/\(next)", cache: true) { tomorrow = day }
         if let all: [GarminActivity] = try? await API.shared.get("/api/activities", cache: true),
            let latest = all.first(where: { $0.isRun && ($0.distance_m ?? 0) > 0 }),
            latest.id != lastRun?.id || lastRun?.track == nil {
@@ -217,13 +249,14 @@ final class HomeModel {
     }
 
     /// The session to show on the dashboard: today's until it is done, then tomorrow's.
-    var nextSession: (date: String, name: String, subtitle: String?, kind: String, isTomorrow: Bool, status: String?, started: Bool, week: Int)? {
+    var nextSession: NextSession? {
         guard let day = dash?.today else { return nil }
         let workout = dash?.workouts.first { $0.date == day.date && $0.template_key == day.templateKey }
         if workout?.status == "done", let t = tomorrow {
-            return (t.date, t.name, t.subtitle, t.kind, true, t.main?.status, false, t.week)
+            let planned = t.workouts.first { $0.template_key == t.day.templateKey }
+            return NextSession(day: t.day, isTomorrow: true, status: planned?.status, started: false)
         }
-        return (day.date, day.template.name, day.template.subtitle, day.template.kind, false, workout?.status, workout?.started_at != nil, day.week)
+        return NextSession(day: day, isTomorrow: false, status: workout?.status, started: workout?.started_at != nil)
     }
 
     /// Asks the server to pull from Garmin now, then reloads.
@@ -336,17 +369,14 @@ final class HomeModel {
         }
     }
 
-    /// Visible cards arranged in rows: a full-width card alone, half-width cards in pairs.
-    var rows: [[CardSetting]] {
-        var out: [[CardSetting]] = []
-        for card in layout where !card.hidden && hasData(card.kind) {
-            if !(card.wide || card.kind.alwaysWide), let last = out.last, last.count == 1, !(last[0].wide || last[0].kind.alwaysWide) {
-                out[out.count - 1].append(card)
-            } else {
-                out.append([card])
-            }
-        }
-        return out
+    /// The widgets on the dashboard, in order.
+    var visible: [CardSetting] { layout.filter { !$0.hidden && hasData($0.kind) } }
+
+    /// Lowest, average and highest of a chart's values.
+    func spread(_ values: [Double?]) -> (low: Double, average: Double, high: Double)? {
+        let v = values.compactMap { $0 }
+        guard let low = v.min(), let high = v.max() else { return nil }
+        return (low, v.reduce(0, +) / Double(v.count), high)
     }
 }
 

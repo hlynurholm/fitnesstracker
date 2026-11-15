@@ -60,8 +60,9 @@ and elevation over distance, splits and heart rate zones. It opens from the Last
 Progress. The same content (`RunDetail`) also sits inside the day it was recorded on, from `recorded` in the day
 response, so a run shows in full on its day even when that day's session is a lift. There the map does not pan or
 zoom, so a drag scrolls the day; "Open" leads to the run page. Dragging along the strip under the map, or tapping the route, moves a point along
-it and the top of the map shows distance, time, pace, heart rate and height there. The play button on the strip runs the point along the
-route by the watch's clock at 200 times speed (`RouteMap.playbackSpeed`). The route comes from `lat`/`lon` in the activity's track; activities imported
+it and the top of the map shows distance, time, pace, heart rate and height there. Touching and holding the map opens a menu for what
+the strip draws (elevation, pace or heart rate) and for the map (standard, satellite or hybrid, in 2D or 3D); the
+choices are remembered for every run. The route comes from `lat`/`lon` in the activity's track; activities imported
 before the track kept positions get them filled in from the stored file the first time they are opened.
 
 ## Dashboard

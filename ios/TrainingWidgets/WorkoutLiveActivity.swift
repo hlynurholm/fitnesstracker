@@ -110,8 +110,11 @@ private struct LockScreenView: View {
             HStack(alignment: .center, spacing: Theme.Space.m) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(state.title.uppercased()).modifier(Heading(30, .heavy)).foregroundStyle(ink).lineLimit(1).minimumScaleFactor(0.6)
-                    // Shrinks before it is cut: "Set 1 of 4 · 122.5 kg × 4 reps" has to be readable whole.
-                    Text(state.detail).font(Theme.Typography.callout.weight(.medium)).foregroundStyle(soft).lineLimit(2).minimumScaleFactor(0.75)
+                    // "Set 1 of 4 · 122.5 kg × 4 reps" goes on two lines at the dot, so the weight and reps stay together.
+                    let parts = state.detail.split(separator: " · ", maxSplits: 1).map(String.init)
+                    ForEach(parts, id: \.self) { part in
+                        Text(part).font(Theme.Typography.callout.weight(.medium)).foregroundStyle(soft).lineLimit(1).minimumScaleFactor(0.7)
+                    }
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 0) {

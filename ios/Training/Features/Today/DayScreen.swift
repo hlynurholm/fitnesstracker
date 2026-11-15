@@ -42,6 +42,8 @@ private struct DayContent: View {
     @State private var showChange = false
     @State private var showCalendar = false
     @State private var syncing = false
+    /// Eight weeks either side of the week on screen, for the strip that scrolls. (The server gives 120 days at most.)
+    @State private var schedule: [ScheduleDay] = []
     @State private var showFinish = false
     @State private var confirmDelete = false
     @Environment(\.scenePhase) private var scenePhase
@@ -50,18 +52,15 @@ private struct DayContent: View {
         Screen(title: isRoot ? (selected == Day.today() ? "Today" : Day.label(selected)) : nil, accessory: AnyView(tools)) {
             if let day = model.day {
                 // The week strip keeps its identity across days, so it never redraws from scratch.
-                WeekStrip(week: model.data?.week ?? [], selected: selected, go: go)
-                // Getting around, kept in the page instead of in the bar at the top: back to today, and a day back or
-                // forward.
-                HStack(spacing: Theme.Space.s) {
-                    Spacer(minLength: 0)
-                    if selected != Day.today() {
+                WeekStrip(days: stripDays, selected: selected, go: go)
+                    .task(id: Day.monday(of: selected)) { await loadStrip() }
+                if selected != Day.today() {
+                    HStack {
+                        Spacer(minLength: 0)
                         Button { go(Day.today()) } label: { Text("Today").font(Theme.Typography.label).padding(.horizontal, Theme.Space.m).frame(height: 36).glass() }
                     }
-                    Button { go(Day.add(selected, -1)) } label: { Image(systemName: "chevron.left").font(.footnote.weight(.bold)).frame(width: 36, height: 36).glass(in: Circle()) }.accessibilityLabel("Previous day")
-                    Button { go(Day.add(selected, 1)) } label: { Image(systemName: "chevron.right").font(.footnote.weight(.bold)).frame(width: 36, height: 36).glass(in: Circle()) }.accessibilityLabel("Next day")
+                    .buttonStyle(.plain).foregroundStyle(Theme.Palette.text)
                 }
-                .buttonStyle(.plain).foregroundStyle(Theme.Palette.text)
                 if showCalendar { CalendarPanel(selected: selected) { date in withAnimation(.snappy) { showCalendar = false }; go(date) } }
                 // Beyond the concrete planning window there is no session yet, only an outlook.
                 if Outlook(day.horizon) != .concrete, !day.moved, (model.data?.workouts ?? []).isEmpty {
@@ -224,12 +223,33 @@ private struct DayContent: View {
         .buttonStyle(.plain).foregroundStyle(Theme.Palette.text).fixedSize()
     }
 
+    /// The days of the strip: the weeks around the day on screen once they are loaded, that day's own week until then.
+    private var stripDays: [WeekStrip.Day] {
+        let monday = Day.monday(of: selected)
+        if schedule.contains(where: { $0.date == monday }) {
+            return schedule.map { .init(date: $0.date, kind: $0.kind, name: $0.name, status: $0.main?.status, outlook: $0.outlook) }
+        }
+        return (model.data?.week ?? []).map { d in
+            let w = d.workouts.first { $0.template_key == d.templateKey } ?? d.workouts.first { $0.status != "skipped" } ?? d.workouts.first
+            return .init(date: d.date, kind: d.kind, name: d.name, status: w?.status, outlook: w != nil || d.moved ? .concrete : Outlook(d.horizon))
+        }
+    }
+
+    private func loadStrip() async {
+        let monday = Day.monday(of: selected)
+        // Loaded weeks are kept until the day on screen comes within three weeks of their edge.
+        if let first = schedule.first?.date, let last = schedule.last?.date, Day.add(monday, -21) >= first, Day.add(monday, 27) <= last { return }
+        if let s: Schedule = try? await API.shared.get("/api/schedule?from=\(Day.add(monday, -56))&to=\(Day.add(monday, 62))", cache: true) { schedule = s.days }
+    }
+
     private func sync() async {
         syncing = true
         defer { syncing = false }
         do {
             let r: GarminSyncResult = try await API.shared.send("POST", "/api/garmin/sync")
             await model.load()
+            schedule = []
+            await loadStrip()
             model.toast = r.error ?? (r.imported.isEmpty ? "Nothing new from Garmin" : "Fetched \(r.imported.count) new from Garmin")
         } catch { model.toast = error.localizedDescription }
     }
@@ -295,32 +315,61 @@ private struct OutlookCard: View {
     }
 }
 
+/// The days along the top of a day page, seven on screen at a time. It scrolls sideways through the weeks and always
+/// comes to rest with whole days showing.
 private struct WeekStrip: View {
-    let week: [WeekDay]
+    struct Day: Identifiable, Equatable {
+        let date: String
+        let kind: String
+        let name: String
+        /// Of the session that stands for the day, if one is logged.
+        let status: String?
+        let outlook: Outlook
+        var id: String { date }
+    }
+    let days: [Day]
     let selected: String
     let go: (String) -> Void
+    /// The day at the left edge.
+    @State private var leading: String?
+
     var body: some View {
-        HStack(spacing: Theme.Space.xs) {
-            ForEach(week) { d in
-                let w = d.workouts.first { $0.template_key == d.templateKey } ?? d.workouts.first { $0.status != "skipped" } ?? d.workouts.first
-                Button { go(d.date) } label: {
-                    VStack(spacing: 3) {
-                        Text(Day.label(d.date).prefix(3)).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
-                        Text(Day.dayNumber(d.date)).font(Theme.Typography.headline).foregroundStyle(d.date == Day.today() ? Theme.Palette.accent : Theme.Palette.text)
-                        // Past the concrete plan the dot is grey (estimate) or absent, unless something is logged or moved.
-                        let outlook = w != nil || d.moved ? Outlook.concrete : Outlook(d.horizon)
-                        Circle().fill(w?.status == "done" ? Theme.Palette.ok : (outlook == .concrete ? Theme.Palette.kind(d.kind) : Theme.Palette.rest).opacity(w?.status == "skipped" ? 0.25 : 0.8))
-                            .frame(width: 7, height: 7).opacity(outlook == .none ? 0 : 1)
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 0) {
+                ForEach(days) { d in
+                    Button { go(d.date) } label: {
+                        VStack(spacing: 3) {
+                            Text(Training.Day.label(d.date).prefix(3)).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+                            Text(Training.Day.dayNumber(d.date)).font(Theme.Typography.headline).foregroundStyle(d.date == Training.Day.today() ? Theme.Palette.accent : Theme.Palette.text)
+                            // Past the concrete plan the dot is grey (estimate) or absent, unless something is logged or moved.
+                            Circle().fill(d.status == "done" ? Theme.Palette.ok : (d.outlook == .concrete ? Theme.Palette.kind(d.kind) : Theme.Palette.rest).opacity(d.status == "skipped" ? 0.25 : 0.8))
+                                .frame(width: 7, height: 7).opacity(d.outlook == .none ? 0 : 1)
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, Theme.Space.s)
+                        .background(d.date == selected ? Theme.Palette.fill : .clear, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                        .padding(.horizontal, 2)
                     }
-                    .frame(maxWidth: .infinity).padding(.vertical, Theme.Space.s)
-                    .background(d.date == selected ? Theme.Palette.fill : .clear, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                    .buttonStyle(.plain)
+                    .containerRelativeFrame(.horizontal, count: 7, spacing: 0)
+                    .accessibilityLabel("\(Training.Day.label(d.date)), \(d.name)")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(Day.label(d.date)), \(d.name)")
             }
+            .scrollTargetLayout()
         }
+        .scrollTargetBehavior(.viewAligned)
+        .scrollPosition(id: $leading, anchor: .leading)
         .padding(Theme.Space.xs)
         .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        // Show the week of the chosen day when it changes, or when the weeks arrive, unless that day is already in view.
+        .onChange(of: selected, initial: true) { _, _ in reveal(animated: true) }
+        .onChange(of: days.count) { _, _ in reveal(animated: false) }
+    }
+
+    private func reveal(animated: Bool) {
+        if let leading, selected >= leading, selected <= Training.Day.add(leading, 6), days.contains(where: { $0.date == leading }) { return }
+        let monday = Training.Day.monday(of: selected)
+        guard days.contains(where: { $0.date == monday }) else { return }
+        if animated, leading != nil { withAnimation(.snappy) { leading = monday } } else { leading = monday }
     }
 }
 

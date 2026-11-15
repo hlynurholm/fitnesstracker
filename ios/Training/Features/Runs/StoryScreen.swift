@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage.CIFilterBuiltins
 import PhotosUI
 import SwiftUI
 
@@ -62,6 +63,8 @@ struct StoryOptions {
     var color = StoryColor.purple
     var paint = StoryPaint.pace
     var name = ""
+    /// The ticket as frosted glass instead of a card of colour.
+    var frosted = false
 }
 
 /// The numbers and shapes of a run that the layouts draw from.
@@ -95,6 +98,8 @@ struct StoryRun {
 struct StorySticker: View {
     let run: StoryRun
     let options: StoryOptions
+    /// The photo behind the sticker, blurred, for the frosted ticket to show through. nil when there is no photo.
+    var blurred: UIImage? = nil
 
     private func display(_ size: CGFloat) -> Font { .system(size: size, weight: .heavy).width(.condensed) }
     private func label(_ size: CGFloat) -> Font { .system(size: size, weight: .semibold).width(.condensed) }
@@ -105,7 +110,13 @@ struct StorySticker: View {
             ZStack {
                 switch options.layout {
                 case .route: routeLayout(u)
-                case .ticket: ticket(u)
+                case .ticket:
+                    // Frosted: the blurred photo, cut to the card's shape, sits under a see-through card.
+                    if options.frosted, let blurred {
+                        Image(uiImage: blurred).resizable().scaledToFill().frame(width: geo.size.width, height: geo.size.height).clipped()
+                            .mask { ticket(u, solid: true) }
+                    }
+                    ticket(u)
                 case .poster: poster(u)
                 case .splits: splitsLayout(u)
                 case .strip: strip(u)
@@ -152,8 +163,10 @@ struct StorySticker: View {
     }
 
     /// 2. A card of one colour listing every number.
-    private func ticket(_ u: CGFloat) -> some View {
-        let ink = options.color.ink
+    private func ticket(_ u: CGFloat, solid: Bool = false) -> some View {
+        let frosted = options.frosted && !solid
+        let ink: Color = frosted ? .white : options.color.ink
+        let shape = RoundedRectangle(cornerRadius: u * 6, style: .continuous)
         let rows: [(String, String?)] = [("Distance", "\(run.km) km"), ("Pace", "\(run.pace) /km"), ("Time", run.time), ("Climb", run.climb), ("Heart", run.heart.map { "\($0) bpm" })]
         return VStack(alignment: .leading, spacing: u * 2.6) {
             Text("\(run.weekday) run".uppercased()).font(display(u * 13)).foregroundStyle(ink)
@@ -168,8 +181,13 @@ struct StorySticker: View {
             }
         }
         .padding(u * 6)
-        .background(LinearGradient(colors: [options.color.color, options.color.color.mix(with: options.color == .dark ? .white : .black, by: 0.22)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: u * 6, style: .continuous))
+        .background {
+            if frosted {
+                shape.fill(.white.opacity(0.16)).overlay(shape.strokeBorder(.white.opacity(0.35), lineWidth: max(u * 0.3, 0.5)))
+            } else {
+                shape.fill(LinearGradient(colors: [options.color.color, options.color.color.mix(with: options.color == .dark ? .white : .black, by: 0.22)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            }
+        }
         .shadow(color: .clear, radius: 0)
         .padding(.horizontal, u * 10)
     }
@@ -321,6 +339,7 @@ struct StoryScreen: View {
     let activity: GarminActivity
     @State private var options = StoryOptions()
     @State private var photo: UIImage?
+    @State private var blurred: UIImage?
     @State private var picked: PhotosPickerItem?
     @State private var camera = false
     @State private var shared: URL?
@@ -362,6 +381,7 @@ struct StoryScreen: View {
             .card()
         }
         .inlineTitle("Share run")
+        .onChange(of: photo) { _, image in blurred = image.flatMap(Self.blur) }
         .onChange(of: picked) { _, item in
             Task { if let data = try? await item?.loadTransferable(type: Data.self), let image = UIImage(data: data) { photo = image } }
         }
@@ -371,7 +391,7 @@ struct StoryScreen: View {
 
     /// The photo (or nothing) with the sticker over it, 9 by 16.
     private func picture(_ run: StoryRun, checker: Bool) -> some View {
-        StorySticker(run: run, options: options)
+        StorySticker(run: run, options: options, blurred: blurred)
             .background {
                 if let photo { Image(uiImage: photo).resizable().scaledToFill() } else if checker { Checkerboard() }
             }
@@ -396,7 +416,11 @@ struct StoryScreen: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                if !(layout == .route || layout == .splits) || options.paint == .solid {
+                if layout == .ticket {
+                    Picker("Card", selection: $options.frosted) { Text("Colour").tag(false); Text("Frosted glass").tag(true) }.pickerStyle(.segmented)
+                    if options.frosted, photo == nil { Text("Without a photo the card is saved lightly tinted and see-through. The blur shows once there is a photo behind it.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
+                }
+                if !(layout == .route || layout == .splits) || options.paint == .solid, !(layout == .ticket && options.frosted) {
                     HStack(spacing: Theme.Space.s) {
                         ForEach(StoryColor.allCases) { c in
                             Button { options.color = c } label: {
@@ -413,6 +437,19 @@ struct StoryScreen: View {
             }
             .card()
         }
+    }
+
+    /// The photo, blurred, at a small size (the blur hides the loss).
+    private static func blur(_ image: UIImage) -> UIImage? {
+        let side: CGFloat = 540 / max(image.size.width, 1)
+        let size = CGSize(width: 540, height: image.size.height * side)
+        let small = UIGraphicsImageRenderer(size: size, format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }()).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+        guard let input = CIImage(image: small) else { return nil }
+        let filter = CIFilter.gaussianBlur()
+        filter.inputImage = input.clampedToExtent()
+        filter.radius = 14
+        guard let output = filter.outputImage?.cropped(to: input.extent), let cg = CIContext().createCGImage(output, from: input.extent) else { return nil }
+        return UIImage(cgImage: cg)
     }
 
     /// Draws the picture at 1080 by 1920 and hands it to the share sheet as a PNG file, which keeps it see-through.

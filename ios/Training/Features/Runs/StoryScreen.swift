@@ -1,3 +1,4 @@
+import AVFoundation
 import PhotosUI
 import SwiftUI
 
@@ -364,7 +365,7 @@ struct StoryScreen: View {
         .onChange(of: picked) { _, item in
             Task { if let data = try? await item?.loadTransferable(type: Data.self), let image = UIImage(data: data) { photo = image } }
         }
-        .fullScreenCover(isPresented: $camera) { CameraPicker { photo = $0 }.ignoresSafeArea() }
+        .fullScreenCover(isPresented: $camera) { StoryCamera(run: run, options: options) { photo = $0 } }
         .sheet(item: $shared) { ShareSheet(items: [$0]) }
     }
 
@@ -448,26 +449,117 @@ private struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-private struct CameraPicker: UIViewControllerRepresentable {
+/// The app's own camera for a story: the viewfinder is the 9 by 16 picture itself, with the sticker on top, so what
+/// is on screen is what gets saved.
+private struct StoryCamera: View {
+    let run: StoryRun
+    let options: StoryOptions
     let taken: (UIImage) -> Void
+    @State private var camera = CameraModel()
     @Environment(\.dismiss) private var dismiss
 
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.sourceType = .camera
-        picker.delegate = context.coordinator
-        return picker
-    }
-    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let parent: CameraPicker
-        init(_ parent: CameraPicker) { self.parent = parent }
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-            if let image = info[.originalImage] as? UIImage { parent.taken(image) }
-            parent.dismiss()
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: Theme.Space.l) {
+                CameraPreview(session: camera.session)
+                    .overlay { StorySticker(run: run, options: options) }
+                    .aspectRatio(9 / 16, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                    .overlay { if let problem = camera.problem { Text(problem).font(Theme.Typography.callout).foregroundStyle(.white).multilineTextAlignment(.center).padding() } }
+                HStack {
+                    Button("Cancel") { dismiss() }.font(Theme.Typography.label).foregroundStyle(.white).frame(width: 90, alignment: .leading)
+                    Spacer()
+                    Button { camera.capture { image in taken(image); dismiss() } } label: {
+                        Circle().fill(.white).frame(width: 66, height: 66).overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 4).padding(-7))
+                    }
+                    .accessibilityLabel("Take photo")
+                    Spacer()
+                    Button { camera.flip() } label: { Image(systemName: "arrow.triangle.2.circlepath.camera").font(.title2).foregroundStyle(.white) }
+                        .frame(width: 90, alignment: .trailing).accessibilityLabel("Switch camera")
+                }
+                .padding(.horizontal, Theme.Space.xl)
+            }
+            .padding(.vertical, Theme.Space.m)
         }
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
+        .task { await camera.start() }
+        .onDisappear { camera.stop() }
+    }
+}
+
+/// The capture session behind `StoryCamera`.
+@Observable
+private final class CameraModel: NSObject, AVCapturePhotoCaptureDelegate {
+    let session = AVCaptureSession()
+    private(set) var problem: String?
+    @ObservationIgnored private let output = AVCapturePhotoOutput()
+    @ObservationIgnored private var position = AVCaptureDevice.Position.back
+    @ObservationIgnored private var done: ((UIImage) -> Void)?
+    @ObservationIgnored private let queue = DispatchQueue(label: "story.camera")
+
+    func start() async {
+        guard await AVCaptureDevice.requestAccess(for: .video) else { problem = "Allow the camera for Training in the Settings app to take a photo here."; return }
+        queue.async { [self] in
+            session.beginConfiguration()
+            session.sessionPreset = .photo
+            use(position)
+            if session.canAddOutput(output) { session.addOutput(output) }
+            session.commitConfiguration()
+            session.startRunning()
+        }
+    }
+
+    func stop() { queue.async { [self] in session.stopRunning() } }
+
+    func flip() {
+        position = position == .back ? .front : .back
+        queue.async { [self] in session.beginConfiguration(); use(position); session.commitConfiguration() }
+    }
+
+    private func use(_ position: AVCaptureDevice.Position) {
+        session.inputs.forEach(session.removeInput)
+        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position), let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else { return }
+        session.addInput(input)
+    }
+
+    func capture(_ done: @escaping (UIImage) -> Void) {
+        self.done = done
+        queue.async { [self] in
+            if let connection = output.connection(with: .video) {
+                if connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 } // upright, phone held tall
+                if connection.isVideoMirroringSupported { connection.automaticallyAdjustsVideoMirroring = false; connection.isVideoMirrored = position == .front }
+            }
+            output.capturePhoto(with: AVCapturePhotoSettings(), delegate: self)
+        }
+    }
+
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        guard let data = photo.fileDataRepresentation(), let image = UIImage(data: data) else { return }
+        let cropped = Self.tall(image)
+        DispatchQueue.main.async { self.done?(cropped) }
+    }
+
+    /// The middle 9 by 16 of a photo, which is what the viewfinder showed.
+    private static func tall(_ image: UIImage) -> UIImage {
+        let size = image.size
+        let width = min(size.width, size.height * 9 / 16), height = width * 16 / 9
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }())
+        return renderer.image { _ in image.draw(at: CGPoint(x: (width - size.width) / 2, y: (height - size.height) / 2)) }
+    }
+}
+
+private struct CameraPreview: UIViewRepresentable {
+    let session: AVCaptureSession
+    func makeUIView(context: Context) -> Layer {
+        let view = Layer()
+        view.preview.session = session
+        view.preview.videoGravity = .resizeAspectFill
+        return view
+    }
+    func updateUIView(_ view: Layer, context: Context) {}
+
+    final class Layer: UIView {
+        override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
+        var preview: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     }
 }

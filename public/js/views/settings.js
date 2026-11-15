@@ -11,6 +11,7 @@ export async function renderSettings(container) {
 
   const form = h("div", { class: "card" });
   const start = h("input", { type: "date", value: s.program_start_date || PROGRAM.startDateDefault });
+  const rotation = h("select", null, [["1", "Continue where I left off (a skipped lift comes next)"], ["0", "Fixed: A on Monday, B on Wednesday, C on Friday"]].map(([v, l]) => h("option", { value: v, selected: String(s.lift_rotation ?? "1") === v }, l)));
   const phase = h("select", null, [["", "Follow the plan (weeks 1 to 2, 3 to 6, 7+)"], ["1", "Phase 1: Tune-up"], ["2", "Phase 2: Power"], ["3", "Phase 3: Reactive"]].map(([v, l]) => h("option", { value: v, selected: String(s.phase_override || "") === v }, l)));
   const goal = h("input", { type: "text", inputmode: "decimal", pattern: "[0-9]*[.,]?[0-9]*", value: s.goal_weight_kg || PROGRAM.body.goalWeightKg });
   const kcal = h("input", { type: "number", step: "10", value: s.calorie_target || PROGRAM.nutrition.calories });
@@ -21,6 +22,7 @@ export async function renderSettings(container) {
   form.appendChild(h("h3", null, "Plan"));
   form.appendChild(h("label", { class: "field" }, h("span", null, "Week 1 starts on (Monday)"), start));
   form.appendChild(h("label", { class: "field" }, h("span", null, "Jump phase"), phase));
+  form.appendChild(h("label", { class: "field" }, h("span", null, "Lift order"), rotation));
   form.appendChild(h("h3", null, "Targets"));
   form.appendChild(h("div", { class: "inline-fields" },
     h("label", { class: "field" }, h("span", null, "Goal weight (kg)"), goal),
@@ -31,7 +33,7 @@ export async function renderSettings(container) {
     h("label", { class: "field" }, h("span", null, "5 km target (mm:ss)"), fiveK)));
   form.appendChild(h("button", { class: "btn primary", onClick: async () => {
     try {
-      const body = { program_start_date: start.value, phase_override: phase.value || null, goal_weight_kg: String(goal.value).trim().replace(",", "."), calorie_target: kcal.value, protein_target: prot.value, fun_budget_kcal: fun.value, max_hr: maxHr.value, five_k_target_sec: parseTime(fiveK.value) };
+      const body = { program_start_date: start.value, phase_override: phase.value || null, lift_rotation: rotation.value, goal_weight_kg: String(goal.value).trim().replace(",", "."), calorie_target: kcal.value, protein_target: prot.value, fun_budget_kcal: fun.value, max_hr: maxHr.value, five_k_target_sec: parseTime(fiveK.value) };
       state.settings = await api.put("/api/settings", body);
       store.set("ft_settings", state.settings);
       toast("Settings saved");

@@ -370,19 +370,50 @@ export function buildPlan(templateKey, week) {
 }
 
 // Resolve everything the UI needs to know about a date.
+export const LIFT_CYCLE = ["lift_a", "lift_b", "lift_c"];
+
+// Lifts continue where they left off: a lift that was skipped is offered on the next lift day instead of waiting for
+// its weekday to come round again. doneLifts are workouts with status done (date, template_key). Returns a map of
+// date to lift template for lift weekdays (Mon, Wed, Fri) from today on; explicit overrides are left alone and a
+// lift placed by an override counts as taken. Off when the lift_rotation setting is "0".
+export function liftRotation(doneLifts, settings = {}, today = todayLocal(), days = 130) {
+  if (String(settings.lift_rotation ?? "1") === "0") return {};
+  const start = settings.program_start_date || PROGRAM.startDateDefault;
+  let pending = [...LIFT_CYCLE];
+  const take = (k) => { const i = pending.indexOf(k); if (i >= 0) pending.splice(i, 1); if (!pending.length) pending = [...LIFT_CYCLE]; };
+  const done = (doneLifts || []).filter((w) => LIFT_CYCLE.includes(w.template_key) && w.date >= start && w.date <= today).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  for (const w of done) if (w.date < today) take(w.template_key);
+  const doneToday = done.filter((w) => w.date === today);
+  const out = {};
+  for (let i = 0; i < days; i++) {
+    const d = addDays(today, i);
+    const override = settings.overrides ? settings.overrides[d] : null;
+    if (override) { if (LIFT_CYCLE.includes(override)) take(override); continue; }
+    const wd = isoWeekday(d);
+    if (wd !== 1 && wd !== 3 && wd !== 5) continue;
+    if (i === 0 && doneToday.length) { for (const w of doneToday) take(w.template_key); out[d] = doneToday[doneToday.length - 1].template_key; continue; }
+    const k = pending[0];
+    take(k);
+    out[d] = k;
+  }
+  return out;
+}
+
 export function resolveDay(dateStr, settings = {}) {
   const startDate = settings.program_start_date || PROGRAM.startDateDefault;
   const week = weekNumber(dateStr, startDate);
   const phase = phaseForWeek(week, settings);
   const defaultTemplateKey = scheduledTemplateKey(dateStr, Math.max(week, 1));
   const override = settings.overrides ? settings.overrides[dateStr] : null;
-  const templateKey = override && PROGRAM.templates[override] ? override : defaultTemplateKey;
+  const rotation = !override && settings.rotation ? settings.rotation[dateStr] : null;
+  const templateKey = override && PROGRAM.templates[override] ? override : rotation && PROGRAM.templates[rotation] ? rotation : defaultTemplateKey;
   const template = templateFor(templateKey);
   const phaseInfo = PROGRAM.phases.find((p) => p.id === phase);
   return {
     date: dateStr,
     defaultTemplateKey,
-    moved: templateKey !== defaultTemplateKey,
+    moved: !!override && templateKey !== defaultTemplateKey,
+    rotated: !override && templateKey !== defaultTemplateKey,
     weekday: isoWeekday(dateStr),
     weekdayName: WEEKDAYS_LONG[isoWeekday(dateStr) - 1],
     week,

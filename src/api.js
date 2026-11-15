@@ -9,7 +9,7 @@ import { projectDay } from "./projection.js";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{6,80}$/;
 const MAX_RAW_GZ = 1_800_000; // D1 row limit is 2 MB
-const SETTING_KEYS = new Set(["program_start_date", "phase_override", "goal_weight_kg", "calorie_target", "protein_target", "max_hr", "five_k_target_sec", "fun_budget_kcal", "display_name"]);
+const SETTING_KEYS = new Set(["program_start_date", "phase_override", "lift_rotation", "goal_weight_kg", "calorie_target", "protein_target", "max_hr", "five_k_target_sec", "fun_budget_kcal", "display_name"]);
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...headers } });
@@ -73,7 +73,7 @@ async function route(method, p, request, env, url, settings) {
       await setOverride(env, db, ka, settings);
       await pruneEmptyWorkout(env, da, ka);
       await pruneEmptyWorkout(env, db, kb);
-      settings.overrides = await getOverrides(env);
+      Object.assign(settings, await getSettings(env));
       return { a: resolveDay(da, settings), b: resolveDay(db, settings) };
     }
     if (b && b !== "swap" && (method === "PUT" || method === "DELETE")) {
@@ -83,7 +83,7 @@ async function route(method, p, request, env, url, settings) {
       if (key && !PROGRAM.templates[key]) bad("Unknown template");
       const before = resolveDay(date, settings).templateKey;
       await setOverride(env, date, key, settings);
-      settings.overrides = await getOverrides(env);
+      Object.assign(settings, await getSettings(env));
       const after = resolveDay(date, settings);
       if (after.templateKey !== before) await pruneEmptyWorkout(env, date, before);
       return after;
@@ -670,7 +670,9 @@ export async function ingestFile(env, settings, { filename, contentType, bytes, 
     if (wid) await fillWorkoutFromActivities(env, wid);
     out.activities.push({ id, workout_id: wid, date, distance_m: act.distance_m, duration_s: act.duration_s, avg_hr: act.avg_hr, avg_pace_s_per_km: act.avg_pace_s_per_km, best_5k_s: act.best_5k_s, sport: act.sport });
   }
-  if (workoutId && !parsed.activities.length) await env.DB.prepare("UPDATE uploads SET workout_id = ? WHERE id = ?").bind(workoutId, uploadId).run();
+  const matched = new Set(out.activities.map((a) => a.workout_id).filter(Boolean));
+  const rowWorkout = workoutId || (matched.size === 1 ? [...matched][0] : null);
+  if (rowWorkout) await env.DB.prepare("UPDATE uploads SET workout_id = ? WHERE id = ?").bind(rowWorkout, uploadId).run();
   for (const d of parsed.nutrition_days) { await upsertNutritionDay(env, d, uploadId); out.nutrition_days++; }
   for (const m of parsed.body_metrics) {
     await env.DB.prepare(`INSERT INTO body_metrics (date, weight_kg, source) VALUES (?, ?, 'myfitnesspal') ON CONFLICT(date, source) DO UPDATE SET weight_kg = excluded.weight_kg, updated_at = datetime('now')`).bind(m.date, m.weight_kg).run();

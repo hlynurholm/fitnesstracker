@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveDay, scheduledTemplateKey, weekNumber, planHorizon, endOfMonth } from "../public/js/program.js";
+import { resolveDay, scheduledTemplateKey, weekNumber, planHorizon, endOfMonth, liftRotation } from "../public/js/program.js";
 
 const settings = { program_start_date: "2026-10-26" };
 
@@ -63,4 +63,42 @@ test("resolveDay carries the horizon", () => {
   assert.equal(d.horizon, "none");
   assert.equal(d.templateKey, "easy_run", "the template is still resolved, so moving and logging keep working");
   assert.equal(resolveDay("2026-11-12", { ...settings, today: "2026-11-10" }).horizon, "concrete");
+});
+
+test("a skipped lift comes on the next lift day, then the order continues", () => {
+  const s = { program_start_date: "2026-11-09", overrides: {} };
+  // Week 1: Lift A done Monday, Lift B skipped, Lift C done Friday. Today is Sunday 15 Nov.
+  const done = [{ date: "2026-11-09", template_key: "lift_a" }, { date: "2026-11-13", template_key: "lift_c" }];
+  const rot = liftRotation(done, s, "2026-11-15");
+  assert.equal(rot["2026-11-16"], "lift_b");
+  assert.equal(rot["2026-11-18"], "lift_a");
+  assert.equal(rot["2026-11-20"], "lift_b");
+  assert.equal(rot["2026-11-17"], undefined, "run days are untouched");
+  const mon = resolveDay("2026-11-16", { ...s, rotation: rot, today: "2026-11-15" });
+  assert.equal(mon.templateKey, "lift_b");
+  assert.equal(mon.rotated, true);
+  assert.equal(mon.moved, false);
+  assert.equal(mon.defaultTemplateKey, "lift_a");
+});
+
+test("lift rotation: nothing skipped keeps the weekday plan, overrides win, and it can be switched off", () => {
+  const s = { program_start_date: "2026-11-09", overrides: {} };
+  const done = [{ date: "2026-11-09", template_key: "lift_a" }, { date: "2026-11-11", template_key: "lift_b" }, { date: "2026-11-13", template_key: "lift_c" }];
+  const rot = liftRotation(done, s, "2026-11-15");
+  assert.deepEqual([rot["2026-11-16"], rot["2026-11-18"], rot["2026-11-20"]], ["lift_a", "lift_b", "lift_c"]);
+  assert.equal(resolveDay("2026-11-16", { ...s, rotation: rot, today: "2026-11-15" }).rotated, false);
+  // Lift B moved to Tuesday by hand: Wednesday then gets C, not B again.
+  const s2 = { ...s, overrides: { "2026-11-17": "lift_b" } };
+  const rot2 = liftRotation([{ date: "2026-11-09", template_key: "lift_a" }], s2, "2026-11-15");
+  assert.equal(rot2["2026-11-16"], "lift_b");
+  assert.equal(rot2["2026-11-17"], undefined);
+  assert.equal(rot2["2026-11-18"], "lift_c");
+  assert.deepEqual(liftRotation(done, { ...s, lift_rotation: "0" }, "2026-11-15"), {});
+  // A lift done today is kept on today, and the next lift day continues from it.
+  const rot3 = liftRotation([{ date: "2026-11-09", template_key: "lift_a" }, { date: "2026-11-16", template_key: "lift_b" }], s, "2026-11-16");
+  assert.equal(rot3["2026-11-16"], "lift_b");
+  assert.equal(rot3["2026-11-18"], "lift_c");
+  // Only B done so far: A was skipped, so A comes before C.
+  const rot4 = liftRotation([{ date: "2026-11-16", template_key: "lift_b" }], s, "2026-11-16");
+  assert.equal(rot4["2026-11-18"], "lift_a");
 });

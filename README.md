@@ -158,6 +158,10 @@ All calls take `Authorization: Bearer <API_TOKEN>`.
 
 ## Sample data
 
+## Lift order
+
+Lifts continue where they left off. A lift day (Monday, Wednesday, Friday) gets the first lift of A, B, C that has not been done in the current round, so a skipped Lift B shows up on the next lift day instead of waiting a week, and the round starts again at A once all three are done. Days changed by hand in the calendar win, and a lift placed by hand counts as done for the order. Such days carry `rotated: true` in the day and schedule API and show "Next in your lift order" in the app. Settings has a "Lift order" switch back to the fixed weekday plan (`lift_rotation` = `0`).
+
 ## Fetching the data from a Claude thread
 
 Nothing needs copying out of the app. Every read endpoint accepts the API token as a bearer header, so a script can pull the whole dataset:

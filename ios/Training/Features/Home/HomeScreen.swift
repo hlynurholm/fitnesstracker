@@ -99,7 +99,7 @@ struct HomeScreen: View {
             .allowsHitTesting(!editing) // while editing, touches move and resize the widget instead
             .padding(Theme.Space.l)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .cardSurface(fill: setting.kind.fill?.colors, lightFill: setting.kind.fill?.light ?? false)
             .contentShape(.dragPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         if editing {
@@ -288,15 +288,16 @@ private struct CardHeader<Trailing: View>: View {
     let kind: CardKind
     var title: String? = nil
     @ViewBuilder var trailing: Trailing
+    @Environment(\.onColor) private var onColor
     var body: some View {
-        HStack(spacing: Theme.Space.xs) {
-            Image(systemName: kind.icon).font(.caption.weight(.semibold))
-            Text((title ?? kind.title).uppercased()).font(Theme.Typography.label).lineLimit(1).minimumScaleFactor(0.7)
+        HStack(spacing: Theme.Space.s) {
+            Image(systemName: kind.icon).font(.caption.weight(.bold))
+            Text((title ?? kind.title).uppercased()).font(Theme.Typography.headline).lineLimit(1).minimumScaleFactor(0.6)
             Spacer(minLength: Theme.Space.xs)
             trailing
         }
-        .frame(height: 24) // the same with or without a ring, so values line up across a row
-        .foregroundStyle(kind.tint)
+        .frame(height: 26) // the same with or without a ring, so values line up across a row
+        .foregroundStyle(onColor ? Theme.Palette.text : kind.tint)
     }
 }
 
@@ -311,7 +312,7 @@ private struct BigValue: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 3) {
             Text(value).font(Theme.Typography.timer).lineLimit(1).minimumScaleFactor(0.5)
-            if !unit.isEmpty { Text(unit).font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted) }
+            if !unit.isEmpty { Text(unit).font(Theme.Typography.callout).muted() }
         }
     }
 }
@@ -319,7 +320,7 @@ private struct BigValue: View {
 private struct Caption: View {
     let text: String
     init(_ text: String) { self.text = text }
-    var body: some View { Text(text).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).fixedSize(horizontal: false, vertical: true) }
+    var body: some View { Text(text).font(Theme.Typography.caption).muted().fixedSize(horizontal: false, vertical: true) }
 }
 
 /// The one line under a widget's chart: a few short facts, never wrapped, so every widget ends the same way.
@@ -327,7 +328,7 @@ private struct ChartCaption: View {
     let parts: [String?]
     init(_ parts: [String?]) { self.parts = parts }
     var body: some View {
-        Text(parts.compactMap { $0 }.joined(separator: " · ")).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+        Text(parts.compactMap { $0 }.joined(separator: " · ")).font(Theme.Typography.caption).muted()
             .lineLimit(1).minimumScaleFactor(0.75).frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -364,17 +365,19 @@ private struct MetricCard: View {
     let setting: CardSetting
     let spec: MetricSpec
     let wide: Bool
+    @Environment(\.onColor) private var onColor
     private var kind: CardKind { setting.kind }
+    private var tint: Color { onColor ? Theme.Palette.text.opacity(0.85) : spec.tint }
 
     private func show(_ v: Double) -> String { spec.digits == 0 ? Fmt.whole(v * spec.scale) : String(format: "%.\(spec.digits)f", v * spec.scale) }
 
     var body: some View {
         let latest = model.latest(spec.key)
         let goal = latest.flatMap { l in spec.goalKey.flatMap { model.value($0, on: l.date) } }
-        let chart = Spark(values: model.chart(setting.span(wide: wide), every: setting.every(wide: wide)) { day in model.value(spec.key, on: day).map { $0 * spec.scale } }, style: setting.chartStyle, color: spec.tint, goal: goal.map { $0 * spec.scale }, height: wide ? 72 : 44)
+        let chart = Spark(values: model.chart(setting.span(wide: wide), every: setting.every(wide: wide)) { day in model.value(spec.key, on: day).map { $0 * spec.scale } }, style: setting.chartStyle, color: tint, goal: goal.map { $0 * spec.scale }, height: wide ? 72 : 44)
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: kind) {
-                if let latest, let goal, goal > 0 { ProgressRing(progress: latest.value / goal, color: spec.tint, size: 22) }
+                if let latest, let goal, goal > 0 { ProgressRing(progress: latest.value / goal, color: tint, size: 22) }
             }
             ValueAndChart(value: latest.map { show($0.value) } ?? "–", unit: spec.unit, wide: wide, long: chart.values.count > 45) { chart }
             ChartCaption([latest.flatMap { dayNote($0.date, today: model.today) }, goal.flatMap { $0 > 0 ? "goal \(show($0))" : nil },
@@ -431,11 +434,13 @@ private struct SleepCard: View {
     let model: HomeModel
     let setting: CardSetting
     let wide: Bool
+    @Environment(\.onColor) private var onColor
     var body: some View {
         let night = model.latest("sleep.sleepTimeSeconds")
         let stage = { (key: String) -> Double in night.flatMap { model.value("sleep.\(key)", on: $0.date) } ?? 0 }
-        let stages: [(String, Double, Color)] = [("Deep", stage("deepSleepSeconds"), Theme.Palette.sleep), ("Light", stage("lightSleepSeconds"), Theme.Palette.sleep.opacity(0.55)),
-                                                 ("REM", stage("remSleepSeconds"), Theme.Palette.calm), ("Awake", stage("awakeSleepSeconds"), Theme.Palette.energy.opacity(0.8))]
+        let base = onColor ? Theme.Palette.text : Theme.Palette.sleep
+        let stages: [(String, Double, Color)] = [("Deep", stage("deepSleepSeconds"), base), ("Light", stage("lightSleepSeconds"), base.opacity(0.5)),
+                                                 ("REM", stage("remSleepSeconds"), Theme.Palette.calm), ("Awake", stage("awakeSleepSeconds"), Theme.Palette.warn)]
         let score = night.flatMap { model.value("sleep.sleepScores.overall.value", on: $0.date) }
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             CardHeader(kind: .sleep) { if let score { Text("score \(Fmt.whole(score))").font(Theme.Typography.label) } }
@@ -467,7 +472,7 @@ private struct SleepCard: View {
     private func stageLabel(_ s: (String, Double, Color)) -> some View {
         HStack(spacing: Theme.Space.xs) {
             Circle().fill(s.2).frame(width: 7, height: 7)
-            Text(s.0).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+            Text(s.0).font(Theme.Typography.caption).muted()
             Text(Fmt.time(s.1 / 60)).font(Theme.Typography.caption.weight(.semibold).monospacedDigit())
         }
         .lineLimit(1)
@@ -478,7 +483,7 @@ private struct SleepCard: View {
 
     /// Hours slept per night over the widget's range (weekly averages when there are too many nights to draw).
     private func nights(_ height: CGFloat) -> some View {
-        Spark(values: model.chart(setting.span(wide: wide), every: setting.every(wide: wide)) { day in model.value("sleep.sleepTimeSeconds", on: day).map { $0 / 3600 } }, style: setting.chartStyle, color: Theme.Palette.sleep, height: height)
+        Spark(values: model.chart(setting.span(wide: wide), every: setting.every(wide: wide)) { day in model.value("sleep.sleepTimeSeconds", on: day).map { $0 / 3600 } }, style: setting.chartStyle, color: onColor ? Theme.Palette.text.opacity(0.85) : Theme.Palette.sleep, height: height)
     }
 }
 
@@ -487,14 +492,15 @@ private struct IntensityCard: View {
     let model: HomeModel
     let setting: CardSetting
     let wide: Bool
+    @Environment(\.onColor) private var onColor
     var body: some View {
         let monday = Day.monday(of: model.today)
         let week = (0..<7).compactMap { model.intensity(on: Day.add(monday, $0)) }.reduce(0, +)
         let goal = model.latest("intensityMinutes.goal")?.value ?? 150
         VStack(alignment: .leading, spacing: Theme.Space.s) {
-            CardHeader(kind: .intensity) { ProgressRing(progress: week / max(goal, 1), color: CardKind.intensity.tint, size: 22) }
+            CardHeader(kind: .intensity) { ProgressRing(progress: week / max(goal, 1), color: onColor ? Theme.Palette.text : CardKind.intensity.tint, size: 22) }
             BigValue(value: Fmt.whole(week), unit: "min")
-            Spark(values: model.chart(setting.span(wide: wide), every: setting.every(wide: wide)) { model.intensity(on: $0) }, style: setting.chartStyle, color: CardKind.intensity.tint, height: wide ? 72 : 44)
+            Spark(values: model.chart(setting.span(wide: wide), every: setting.every(wide: wide)) { model.intensity(on: $0) }, style: setting.chartStyle, color: onColor ? Theme.Palette.text.opacity(0.85) : CardKind.intensity.tint, height: wide ? 72 : 44)
             ChartCaption(["this week", "goal \(Fmt.whole(goal))"])
         }
     }
@@ -524,7 +530,7 @@ private struct SessionCard: View {
                             Caption([s.isTomorrow ? Day.label(s.date) : nil, s.subtitle].compactMap { $0 }.joined(separator: " · "))
                         }
                         Spacer()
-                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.Palette.muted)
+                        OpenGlyph()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).contentShape(Rectangle())
@@ -549,7 +555,8 @@ private struct LastRunCard: View {
                         HStack(alignment: .center, spacing: Theme.Space.l) {
                             numbers(run)
                             Spacer(minLength: 0)
-                            if !route.isEmpty { RouteSketch(route: route).frame(width: 130, height: 96) }
+                            if !route.isEmpty { RouteSketch(route: route).frame(width: 104, height: 84) }
+                            OpenGlyph()
                         }
                     } else {
                         if !route.isEmpty { RouteSketch(route: route).frame(height: 80).frame(maxWidth: .infinity) }
@@ -565,7 +572,7 @@ private struct LastRunCard: View {
     private func numbers(_ run: GarminActivity) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             BigValue(value: run.distance_m.map { String(format: "%.2f", $0 / 1000) } ?? "–", unit: "km")
-            Caption([run.duration_s.map { Fmt.time($0) }, run.avg_pace_s_per_km.map { Fmt.pace($0) }, run.avg_hr.map { "\(Int($0)) bpm" }].compactMap { $0 }.joined(separator: " · "))
+            ChartCaption([run.duration_s.map { Fmt.time($0) }, run.avg_pace_s_per_km.map { Fmt.pace($0) }, run.avg_hr.map { "\(Int($0)) bpm" }])
         }
     }
 }
@@ -703,7 +710,7 @@ private struct FactTile: View {
             let shape = RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
             switch paint {
             case .wash: shape.fill(fact.tint.opacity(0.12))
-            case .solid: shape.fill(fact.tint.gradient)
+            case .solid: GrainyGradient(colors: [fact.tint, fact.tint.opacity(0.6)]).clipShape(shape)
             case .outline: shape.strokeBorder(fact.tint.opacity(0.5), lineWidth: 1.5)
             }
         }

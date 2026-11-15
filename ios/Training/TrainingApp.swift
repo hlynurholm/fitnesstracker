@@ -12,7 +12,7 @@ struct TrainingApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView().tint(Theme.Palette.accent)
+            RootView().tint(Theme.Palette.accent).preferredColorScheme(.dark) // the stylized look is designed on charcoal
         }
     }
 }

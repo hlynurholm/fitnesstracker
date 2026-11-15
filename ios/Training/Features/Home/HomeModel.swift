@@ -49,6 +49,17 @@ enum CardKind: String, CaseIterable, Codable {
         }
     }
 
+    /// Widgets that are a whole card of colour, and whether that colour is light (so what sits on it turns dark).
+    var fill: (colors: [Color], light: Bool)? {
+        switch self {
+        case .today: (Theme.Palette.periwinkle, false)
+        case .steps: (Theme.Palette.butter, true)
+        case .sleep: (Theme.Palette.dusk, false)
+        case .intensity: (Theme.Palette.coral, false)
+        default: nil
+        }
+    }
+
     /// Cards that only make sense across the full width.
     var alwaysWide: Bool { self == .facts || self == .all }
 
@@ -95,7 +106,7 @@ struct MetricSpec {
 
     static let all: [CardKind: MetricSpec] = [
         .steps: .init(title: "Steps", icon: "figure.walk", tint: Theme.Palette.accent, key: "movement.steps.value", style: .bars, goalKey: "movement.steps.goal"),
-        .restingHR: .init(title: "Resting heart rate", icon: "heart.fill", tint: Theme.Palette.heart, key: "heartRate.restingValue", unit: "bpm"),
+        .restingHR: .init(title: "Resting HR", icon: "heart.fill", tint: Theme.Palette.heart, key: "heartRate.restingValue", unit: "bpm"),
         .hrv: .init(title: "HRV", icon: "waveform.path.ecg", tint: Theme.Palette.test, key: "hrv.lastNightAvg", unit: "ms"),
         .bodyBattery: .init(title: "Body Battery", icon: "battery.75percent", tint: Theme.Palette.ok, key: "bodyBattery.maxValue", style: .bars),
         .stress: .init(title: "Stress", icon: "brain.head.profile", tint: Theme.Palette.energy, key: "stress.avgLevel"),

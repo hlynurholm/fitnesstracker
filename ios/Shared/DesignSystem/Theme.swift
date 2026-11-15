@@ -5,30 +5,41 @@ import UIKit
 /// Restyling starts here: colors, type, spacing and radii are only defined in this file.
 enum Theme {
     enum Palette {
-        static let background = dynamic(light: 0xF2F2F7, dark: 0x000000)
-        static let surface = dynamic(light: 0xFFFFFF, dark: 0x1C1C1E)
-        static let surfaceRaised = dynamic(light: 0xF2F2F7, dark: 0x2C2C2E)
+        static let background = dynamic(light: 0xF2F2F7, dark: 0x111113)
+        static let surface = dynamic(light: 0xFFFFFF, dark: 0x1D1D21)
+        static let surfaceRaised = dynamic(light: 0xF2F2F7, dark: 0x2B2B31)
         static let fill = Color(uiColor: .tertiarySystemFill)
         static let separator = Color(uiColor: .separator)
         static let text = Color.primary
         static let muted = Color.secondary
 
-        static let accent = dynamic(light: 0x007AFF, dark: 0x0A84FF)
-        static let ok = dynamic(light: 0x34C759, dark: 0x30D158)
-        static let warn = dynamic(light: 0xFF9500, dark: 0xFF9F0A)
-        static let danger = dynamic(light: 0xFF3B30, dark: 0xFF453A)
+        // Stylized palette: periwinkle, mint, butter and coral on charcoal.
+        static let accent = dynamic(light: 0x5B54E8, dark: 0x9A97FF)
+        static let ok = dynamic(light: 0x1FA971, dark: 0x5FE3A1)
+        static let warn = dynamic(light: 0xE08A00, dark: 0xFFC94A)
+        static let danger = dynamic(light: 0xE5483A, dark: 0xFF6B57)
 
         // Session kinds
         static let lift = accent
         static let run = warn
         static let rest = dynamic(light: 0x8E8E93, dark: 0x8E8E93)
-        static let test = dynamic(light: 0xAF52DE, dark: 0xBF5AF2)
+        static let test = dynamic(light: 0xAF52DE, dark: 0xCDA2FF)
 
         // Health metrics on the dashboard
-        static let heart = dynamic(light: 0xFF2D55, dark: 0xFF375F)
-        static let sleep = dynamic(light: 0x5856D6, dark: 0x5E5CE6)
-        static let energy = dynamic(light: 0xFF9500, dark: 0xFF9F0A)
-        static let calm = dynamic(light: 0x30B0C7, dark: 0x40C8E0)
+        static let heart = dynamic(light: 0xFF2D55, dark: 0xFF6F86)
+        static let sleep = dynamic(light: 0x5856D6, dark: 0x9B8CFF)
+        static let energy = dynamic(light: 0xFF9500, dark: 0xFFB13D)
+        static let calm = dynamic(light: 0x30B0C7, dark: 0x6FD3F0)
+
+        /// Two-colour fills for the widgets that carry a whole card of colour, top left to bottom right.
+        static let periwinkle = [hex(0xA7A4FF), hex(0x6C5CF2)]
+        static let butter = [hex(0xFFDF7A), hex(0xFF9F4A)]
+        static let dusk = [hex(0x5B4BD6), hex(0xB56CF2)]
+        static let coral = [hex(0xFF8F6B), hex(0xF2507A)]
+        /// Soft lights behind every screen.
+        static let glow = [hex(0x6C5CF2), hex(0xF2507A), hex(0xFF9F4A)]
+
+        private static func hex(_ value: UInt32) -> Color { Color(uiColor: UIColor(hex: value)) }
 
         /// Colour along a route or pace chart: 0 is the slowest part of the run, 1 the fastest.
         static func effort(_ t: Double) -> Color {
@@ -63,26 +74,28 @@ enum Theme {
     }
 
     enum Radius {
-        static let card: CGFloat = 16
-        static let control: CGFloat = 10
+        static let card: CGFloat = 26
+        static let control: CGFloat = 14
         static let small: CGFloat = 6
     }
 
     enum Typography {
         /// Typeface for headings, labels, buttons and numbers. Body text keeps the standard face for long reading.
         /// Set to `.default` to turn the rounded look off everywhere, navigation titles included.
-        static let headingDesign: Font.Design = .rounded
+        static let headingDesign: Font.Design = .default
+        /// Headings are set narrow and heavy, poster style. `.standard` turns that off.
+        static let headingWidth: Font.Width = .condensed
 
-        static let screenTitle = Font.system(.largeTitle, design: headingDesign, weight: .bold)
-        static let title = Font.system(.title2, design: headingDesign, weight: .bold)
-        static let headline = Font.system(.headline, design: headingDesign)
+        static let screenTitle = Font.system(.largeTitle, design: headingDesign, weight: .heavy).width(headingWidth)
+        static let title = Font.system(.title, design: headingDesign, weight: .heavy).width(headingWidth)
+        static let headline = Font.system(.title3, design: headingDesign, weight: .heavy).width(headingWidth)
         static let body = Font.system(.body)
         static let callout = Font.system(.callout)
         static let caption = Font.system(.footnote)
-        static let label = Font.system(.caption, design: headingDesign, weight: .semibold)
+        static let label = Font.system(.caption, design: headingDesign, weight: .bold).width(headingWidth)
         /// Big numbers: tiles, timers.
-        static let numeral = Font.system(.title2, design: headingDesign, weight: .semibold).monospacedDigit()
-        static let timer = Font.system(.largeTitle, design: headingDesign, weight: .semibold).monospacedDigit()
+        static let numeral = Font.system(.title2, design: headingDesign, weight: .bold).monospacedDigit()
+        static let timer = Font.system(.largeTitle, design: headingDesign, weight: .bold).monospacedDigit()
 
         /// Navigation bar titles are drawn by UIKit, so they get the heading typeface through the bar's appearance.
         /// Call once at launch.
@@ -121,7 +134,7 @@ enum Tone {
     var soft: Color { self == .neutral ? Theme.Palette.fill : color.opacity(0.15) }
 }
 
-private extension UIColor {
+extension UIColor {
     convenience init(hex: UInt32) {
         self.init(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
     }

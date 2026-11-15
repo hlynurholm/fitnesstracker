@@ -8,12 +8,91 @@ extension View {
         self
             .padding(Theme.Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .cardSurface()
     }
 
-    /// Standard scrolling screen: page background and vertical rhythm between cards.
+    /// What a card is made of: dark glass that lets the lights behind the screen through, or, with `fill`, a grainy
+    /// gradient of its own. `lightFill` says the fill is a light colour, so what sits on it turns dark.
+    @ViewBuilder
+    func cardSurface(fill: [Color]? = nil, lightFill: Bool = false) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+        if let fill {
+            self.environment(\.onColor, true).environment(\.colorScheme, lightFill ? .light : .dark)
+                .background { GrainyGradient(colors: fill).clipShape(shape) }
+                .overlay { shape.strokeBorder(.white.opacity(0.18), lineWidth: 1) }
+        } else if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.tint(Theme.Palette.surface.opacity(0.55)), in: shape)
+        } else {
+            self.background(.ultraThinMaterial, in: shape)
+        }
+    }
+
+    /// A small piece of glass under a control or a chip.
+    @ViewBuilder
+    func glass(in shape: some Shape = Capsule()) -> some View {
+        if #available(iOS 26.0, *) { self.glassEffect(.regular, in: shape) } else { self.background(.ultraThinMaterial, in: shape) }
+    }
+
+    /// Standard scrolling screen: the page background, which stays put while the cards scroll over it.
     func screenBackground() -> some View {
-        self.background(Theme.Palette.background.ignoresSafeArea())
+        self.background { Backdrop().ignoresSafeArea() }
+    }
+}
+
+/// Secondary text. On a card of colour the system's grey would sink into the card, so it is the text colour, thinned.
+struct MutedStyle: ViewModifier {
+    @Environment(\.onColor) private var onColor
+    func body(content: Content) -> some View { content.foregroundStyle(onColor ? Theme.Palette.text.opacity(0.72) : Theme.Palette.muted) }
+}
+
+extension View {
+    func muted() -> some View { modifier(MutedStyle()) }
+}
+
+extension EnvironmentValues {
+    /// The view sits on a card that is filled with colour, so it draws in the text colour instead of its own tint.
+    @Entry var onColor = false
+}
+
+/// Fine film grain, tiled. Laid over gradients so they do not look like plastic.
+struct Grain: View {
+    private static let tile: UIImage = {
+        let side = 128
+        var pixels = [UInt8](repeating: 0, count: side * side)
+        var generator = SystemRandomNumberGenerator()
+        for i in pixels.indices { pixels[i] = UInt8.random(in: 0...255, using: &generator) }
+        let provider = CGDataProvider(data: Data(pixels) as CFData)!
+        let image = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: side, space: CGColorSpaceCreateDeviceGray(),
+                            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        return UIImage(cgImage: image, scale: 3, orientation: .up)
+    }()
+    var body: some View { Image(uiImage: Self.tile).resizable(resizingMode: .tile).accessibilityHidden(true) }
+}
+
+/// A two-colour gradient with grain over it.
+struct GrainyGradient: View {
+    let colors: [Color]
+    var body: some View {
+        LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            .overlay { Grain().blendMode(.overlay).opacity(0.32) }
+    }
+}
+
+/// Behind every screen: charcoal with soft coloured lights and grain.
+struct Backdrop: View {
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height
+            ZStack {
+                Theme.Palette.background
+                Circle().fill(Theme.Palette.glow[0]).frame(width: w * 0.95).position(x: w * 0.1, y: h * 0.12)
+                Circle().fill(Theme.Palette.glow[1]).frame(width: w * 0.7).position(x: w * 0.95, y: h * 0.42)
+                Circle().fill(Theme.Palette.glow[2]).frame(width: w * 0.8).position(x: w * 0.15, y: h * 0.85)
+            }
+            .blur(radius: 90)
+            .overlay { Theme.Palette.background.opacity(0.45) }
+            .overlay { Grain().blendMode(.overlay).opacity(0.35) }
+        }
     }
 }
 
@@ -36,12 +115,21 @@ struct Badge: View {
     var tone: Tone = .neutral
     init(_ text: String, tone: Tone = .neutral) { self.text = text; self.tone = tone }
     var body: some View {
-        Text(text)
+        let label = Text(text)
             .font(Theme.Typography.label)
-            .foregroundStyle(tone == .neutral ? Theme.Palette.muted : tone.color)
-            .padding(.horizontal, Theme.Space.s)
-            .padding(.vertical, 3)
-            .background(tone.soft, in: Capsule())
+            .padding(.horizontal, Theme.Space.s + 2)
+            .padding(.vertical, Theme.Space.xs)
+        // On a card of colour the tones would clash with the card, so the badge turns into a piece of glass.
+        if onColor { label.foregroundStyle(Theme.Palette.text).glass() } else { label.foregroundStyle(tone == .neutral ? Theme.Palette.muted : tone.color).background(tone.soft, in: Capsule()) }
+    }
+    @Environment(\.onColor) private var onColor
+}
+
+/// Round glass button face with an arrow, on cards that open something.
+struct OpenGlyph: View {
+    var body: some View {
+        Image(systemName: "arrow.up.right").font(.footnote.weight(.bold)).foregroundStyle(Theme.Palette.text)
+            .frame(width: 36, height: 36).glass(in: Circle())
     }
 }
 

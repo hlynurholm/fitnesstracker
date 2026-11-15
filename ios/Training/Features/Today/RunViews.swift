@@ -18,7 +18,9 @@ struct RunBody: View {
             if !recorded.isEmpty {
                 // The run is in: this card is now about what was done. What was planned has its own section further down.
                 ForEach(recorded) { RunSummary(id: $0.id, opens: false) }
-                HStack { Spacer(minLength: 0); ForEach(recorded) { OpenRunButton(id: $0.id) } }
+                // The note is written on the run's page and shown here, under the numbers.
+                if let note = model.workout?.notes, !note.isEmpty { Text(note).font(Theme.Typography.callout) }
+                HStack { Spacer(minLength: 0); ForEach(recorded) { OpenRunButton(id: $0.id) { await model.load() } } }
             } else {
                 if let d = t.detail { Text(d).font(Theme.Typography.callout) }
                 if t.easy == true, let easy = zones.first { Banner("Keep heart rate under \(easy.to). Pace is a guide only.", tone: .accent) }

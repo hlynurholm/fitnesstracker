@@ -104,7 +104,7 @@ private struct DayContent: View {
         let t = model.template
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             Text("THE PLAN WAS").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
-            Text([t.name, t.duration].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(Theme.Typography.callout.weight(.semibold))
+            if let duration = t.duration, !duration.isEmpty { Text(duration).font(Theme.Typography.callout.weight(.semibold)) }
             ForEach([t.subtitle, t.detail, t.pace].compactMap { $0 }, id: \.self) { Text($0).font(Theme.Typography.caption) }
             if day.moved, let usual = model.program.templates[day.defaultTemplateKey] { Text("Moved: the plan had \(usual.name) on this day.").font(Theme.Typography.caption) }
             ForEach(day.extras ?? [], id: \.self) { Text($0).font(Theme.Typography.caption) }
@@ -143,9 +143,9 @@ private struct DayContent: View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text((ran ? "Run" : [t.kind == "rest" ? "Rest" : t.kind.capitalizedFirst, t.duration].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).uppercased())
+                    Text([t.kind == "rest" ? "Rest" : t.kind.capitalizedFirst, ran ? nil : t.duration].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ").uppercased())
                         .font(Theme.Typography.label).foregroundStyle(Theme.Palette.kind(t.kind))
-                    Text(ran ? "What you ran" : t.name).font(Theme.Typography.title)
+                    Text(t.name).font(Theme.Typography.title)
                     if !ran, let s = t.subtitle { Text(s).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
                 }
                 Spacer()
@@ -185,7 +185,8 @@ private struct DayContent: View {
             case .log: LiftLog(model: model); notesAndFinish
             case .summary: LiftSummary(model: model)
             }
-        } else {
+        } else if !(ran && model.workout?.status == "done") {
+            // Once a run is recorded and done, its note and the reopen button live on the run's page.
             notesAndFinish
         }
         actions

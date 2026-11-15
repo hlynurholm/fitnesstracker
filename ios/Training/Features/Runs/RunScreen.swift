@@ -95,11 +95,14 @@ struct RouteSketch: View {
 /// The page for one run.
 struct RunScreen: View {
     let id: Int
+    /// Called when the page closes, so the page it came from can pick up a changed note or a reopened session.
+    var closed: () async -> Void = {}
     @State private var day: String?
 
     var body: some View {
         Screen { RunDetail(id: id) { day = $0.day } }
             .inlineTitle(day.map { Day.label($0) } ?? "Run")
+            .onDisappear { Task { await closed() } }
     }
 }
 
@@ -130,8 +133,9 @@ struct RunSummary: View {
 /// The way from a run in brief to its page.
 struct OpenRunButton: View {
     let id: Int
+    var closed: () async -> Void = {}
     var body: some View {
-        NavigationLink { RunScreen(id: id) } label: {
+        NavigationLink { RunScreen(id: id, closed: closed) } label: {
             Text("Open run").font(Theme.Typography.label).foregroundStyle(Theme.Palette.text).padding(.horizontal, Theme.Space.m).frame(height: 36).glass()
         }
         .buttonStyle(.plain)
@@ -148,6 +152,10 @@ struct RunDetail: View {
     @State private var error: String?
     @State private var importing = false
     @State private var attached: String?
+    /// The session the run is filed under, for its note and for reopening it.
+    @State private var workout: Workout?
+    @State private var note = ""
+    @State private var saved: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -170,6 +178,21 @@ struct RunDetail: View {
                 if route.isEmpty, !track.isEmpty {
                     Text("No GPS positions in this recording, so there is no route to draw.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).padding(.horizontal, Theme.Space.xs)
                 }
+                if let workout {
+                    VStack(alignment: .leading, spacing: Theme.Space.m) {
+                        LabeledField(label: "Notes") {
+                            TextField("How it felt, knees, anything for later", text: $note, axis: .vertical).lineLimit(2...6)
+                        }
+                        HStack(spacing: Theme.Space.s) {
+                            Button("Save note") { Task { await change(["notes": note.isEmpty ? nil : note], done: "Note saved") } }.buttonStyle(.tinted).disabled(note == (workout.notes ?? ""))
+                            if workout.status == "done" {
+                                Button("Reopen session") { Task { await change(["status": "in_progress"], done: "Session reopened. Finish it again from the day.") } }.buttonStyle(.tinted)
+                            }
+                        }
+                        if let saved { Text(saved).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
+                    }
+                    .card()
+                }
                 // Another file for the same session, such as a second recording of it.
                 VStack(alignment: .leading, spacing: Theme.Space.xs) {
                     Button("Attach another file") { importing = true }.font(Theme.Typography.callout)
@@ -188,6 +211,15 @@ struct RunDetail: View {
         .task(id: id) { await load() }
     }
 
+    /// Saves a change to the run's session.
+    private func change(_ body: [String: Any?], done: String) async {
+        guard let id = workout?.id else { return }
+        do {
+            let w: Workout = try await API.shared.send("PATCH", "/api/workouts/\(id)", body)
+            workout = w; note = w.notes ?? ""; saved = done
+        } catch { saved = error.localizedDescription }
+    }
+
     private func attach(_ urls: [URL], to a: GarminActivity) async {
         var fields = ["date": a.day, "source": "garmin", "tz_offset_min": String(-TimeZone.current.secondsFromGMT() / 60)]
         if let workout = a.workout_id { fields["workout_id"] = String(workout) }
@@ -202,6 +234,7 @@ struct RunDetail: View {
         do {
             let a: GarminActivity = try await API.shared.get("/api/activities/\(id)", cache: true)
             activity = a; error = nil; loaded(a)
+            if let id = a.workout_id, let w: Workout = try? await API.shared.get("/api/workouts/\(id)") { workout = w; note = w.notes ?? "" }
         } catch { self.error = error.localizedDescription }
     }
 

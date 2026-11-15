@@ -109,6 +109,24 @@ struct WidgetDetailScreen: View {
         let stages: [(name: String, key: String, color: Color)] = [("Deep", "deepSleepSeconds", Theme.Palette.sleep), ("Light", "lightSleepSeconds", Theme.Palette.sleep.opacity(0.5)),
                                                                    ("REM", "remSleepSeconds", Theme.Palette.calm), ("Awake", "awakeSleepSeconds", Theme.Palette.warn)]
         hero(m)
+        // Each night from bedtime down to waking, like a week in a calendar.
+        let nights = model.nights(days, every: every)
+        if nights.contains(where: { $0 != nil }) {
+            let known = dates.compactMap { model.night(on: $0) }
+            VStack(alignment: .leading, spacing: Theme.Space.m) {
+                CardTitle("Bedtime to waking", note: chartNote)
+                SleepNights(nights: nights, color: m.color, height: 240, axis: true)
+                HStack { Text(Day.short(dates.first ?? "")); Spacer(); Text(Day.short(dates.last ?? "")) }.font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted).padding(.leading, 40)
+            }
+            .card()
+            if !known.isEmpty {
+                let bed = known.map(\.bed).reduce(0, +) / Double(known.count), wake = known.map(\.wake).reduce(0, +) / Double(known.count)
+                TileGrid {
+                    Tile(label: "Average bedtime", value: SleepNights.clock(bed), detail: known.map(\.bed).min().map { "earliest \(SleepNights.clock($0))" })
+                    Tile(label: "Average waking", value: SleepNights.clock(wake), detail: known.map(\.wake).max().map { "latest \(SleepNights.clock($0))" })
+                }
+            }
+        }
         // Each night split into its stages.
         chart("Nights", stages.map { .init(id: $0.name, color: $0.color, values: grouped(stage($0.key))) }, goal: nil, format: m.text)
         figures(m)

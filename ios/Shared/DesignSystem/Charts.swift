@@ -552,6 +552,54 @@ struct BandSpark: View {
     }
 }
 
+/// Nights drawn the way a week looks in a calendar: one bar per night, from bedtime at its top down to waking at its
+/// bottom, so an early night starts higher, a lie-in ends lower and a long night is a long bar.
+/// Times are minutes after 18:00, which keeps a night in one piece across midnight.
+struct SleepNights: View {
+    let nights: [(bed: Double, wake: Double)?]
+    var color: Color = Theme.Palette.accent
+    /// nil lets the chart fill the height it is given.
+    var height: CGFloat? = 44
+    /// Hour lines with clock times, for the large chart.
+    var axis = false
+
+    /// Minutes after 18:00 as a clock time.
+    static func clock(_ minutes: Double) -> String {
+        let m = (Int(minutes.rounded()) + 18 * 60) % 1440
+        return String(format: "%02d:%02d", m / 60, m % 60)
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            let known = nights.compactMap { $0 }
+            guard let first = known.map(\.bed).min(), let last = known.map(\.wake).max(), last > first else { return }
+            // Whole hours around the nights when there is an axis, a little air otherwise.
+            let lo = axis ? (first / 60).rounded(.down) * 60 : first - 15, hi = axis ? (last / 60).rounded(.up) * 60 : last + 15
+            let left: CGFloat = axis ? 40 : 0
+            let y = { (m: Double) in CGFloat((m - lo) / (hi - lo)) * size.height }
+            if axis {
+                let step = hi - lo > 8 * 60 ? 120.0 : 60.0
+                for m in stride(from: lo, through: hi, by: step) {
+                    var line = Path()
+                    line.move(to: CGPoint(x: left, y: y(m))); line.addLine(to: CGPoint(x: size.width, y: y(m)))
+                    context.stroke(line, with: .color(Theme.Palette.separator.opacity(Theme.ChartStyle.gridOpacity)), lineWidth: 0.5)
+                    context.draw(Text(Self.clock(m)).font(Theme.Typography.label).foregroundStyle(Color(uiColor: .secondaryLabel)),
+                                 at: CGPoint(x: 0, y: min(max(y(m), 7), size.height - 7)), anchor: .leading)
+                }
+            }
+            let slot = (size.width - left) / CGFloat(max(nights.count, 1))
+            let width = max(slot * (nights.count > 60 ? 0.9 : 0.7), 1)
+            for (i, night) in nights.enumerated() {
+                guard let night else { continue }
+                let bar = CGRect(x: left + CGFloat(i) * slot + (slot - width) / 2, y: y(night.bed), width: width, height: max(y(night.wake) - y(night.bed), 2))
+                context.fill(Path(roundedRect: bar, cornerRadius: min(width / 2, 4)), with: .color(i == nights.count - 1 ? color : color.opacity(Theme.ChartStyle.dimmedBarOpacity + 0.1)))
+            }
+        }
+        .frame(height: height)
+        .accessibilityHidden(true)
+    }
+}
+
 /// Ring that fills towards a goal.
 struct ProgressRing: View {
     let progress: Double

@@ -220,6 +220,7 @@ final class HomeModel {
     var syncMessage: String?
     var layout: [CardSetting] { didSet { UserDefaults.standard.set(try? JSONEncoder().encode(layout), forKey: "homeLayout") } }
     var today: String { Day.today() }
+    private static var askedForNights = false
 
     init() {
         let saved = UserDefaults.standard.data(forKey: "homeLayout").flatMap { try? JSONDecoder().decode([CardSetting].self, from: $0) } ?? []
@@ -244,6 +245,14 @@ final class HomeModel {
         if let m = try? await metrics { days = Dictionary(m.days.map { ($0.date, $0.data) }, uniquingKeysWith: { _, b in b }) }
         do { dash = try await dashboard; error = nil } catch { self.error = error.localizedDescription }
         loaded = true
+        if !days.isEmpty, !Self.askedForNights, !days.values.contains(where: { $0["sleep.bedMinutesGMT"] != nil || $0["sleep.bedMinutesLocal"] != nil }) {
+            // Imports before bedtimes were kept have none: fetch the stored months again, once per launch.
+            Self.askedForNights = true
+            Task {
+                let _: GarminSyncResult? = try? await API.shared.send("POST", "/api/garmin/sync", ["daily_days": 190])
+                if let m: MetricsResponse = try? await API.shared.get("/api/metrics?days=190", cache: true) { days = Dictionary(m.days.map { ($0.date, $0.data) }, uniquingKeysWith: { _, b in b }) }
+            }
+        }
         // Extras for single widgets. Each is optional: a widget without its data just stays off the dashboard.
         let next = Day.add(today, 1)
         if let day: DayResponse = try? await API.shared.get("/api/day/\(next)", cache: true) { tomorrow = day }
@@ -315,6 +324,25 @@ final class HomeModel {
     func rolling(_ key: String, endingOn date: String, days count: Int = 7) -> Double? {
         let v = (0..<count).compactMap { value(key, on: Day.add(date, -$0)) }
         return v.count >= 3 ? v.reduce(0, +) / Double(v.count) : nil
+    }
+
+    /// When a night began and ended, in minutes after 18:00 on the phone's clock. nil when the watch's times for the
+    /// night have not been imported.
+    func night(on date: String) -> (bed: Double, wake: Double)? {
+        let offset = Double(TimeZone.current.secondsFromGMT()) / 60
+        let clock = { (name: String) in self.value("sleep.\(name)MinutesLocal", on: date) ?? self.value("sleep.\(name)MinutesGMT", on: date).map { $0 + offset } }
+        let evening = { (m: Double) in (m - 18 * 60).truncatingRemainder(dividingBy: 1440) + ((m - 18 * 60).truncatingRemainder(dividingBy: 1440) < 0 ? 1440 : 0) }
+        guard let bed = clock("bed").map(evening) else { return nil }
+        if let wake = clock("wake").map(evening) { return (bed, wake > bed ? wake : wake + 1440) }
+        // No waking time: the night lasted as long as was slept plus the time awake in it.
+        guard let asleep = value("sleep.sleepTimeSeconds", on: date) else { return nil }
+        return (bed, bed + (asleep + (value("sleep.awakeSleepSeconds", on: date) ?? 0)) / 60)
+    }
+
+    /// Nights for a chart over `count` days, with `every` nights averaged into each bar.
+    func nights(_ count: Int, every: Int) -> [(bed: Double, wake: Double)?] {
+        let beds = chart(count, every: every) { self.night(on: $0)?.bed }, wakes = chart(count, every: every) { self.night(on: $0)?.wake }
+        return zip(beds, wakes).map { b, w in b.flatMap { b in w.map { (b, $0) } } }
     }
 
     /// Heart rate variability the way Garmin's HRV status reads it: the 7 day average, not a single night.

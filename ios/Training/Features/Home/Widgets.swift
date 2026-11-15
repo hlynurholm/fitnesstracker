@@ -307,13 +307,20 @@ struct SleepCard: View {
         let score = night.flatMap { model.value("sleep.sleepScores.overall.value", on: $0.date) }
         let hours = model.chart(setting.span(wide: size.isWide), every: setting.every(wide: size.isWide)) { day in model.value("sleep.sleepTimeSeconds", on: day).map { $0 / 3600 } }
         let days = setting.range ?? 7
+        let nights = model.nights(setting.span(wide: size.isWide), every: setting.every(wide: size.isWide))
+        let last = night.flatMap { model.night(on: $0.date) }
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             MetricWidget(kind: .sleep, size: size, value: night.map { Fmt.hours($0.value) } ?? "–",
-                         caption: [night.flatMap { dayNote($0.date, today: model.today) }, model.average("sleep.sleepTimeSeconds", days).map { "\(RangeOption.short(days)) avg \(Fmt.hours($0))" }],
+                         caption: [night.flatMap { dayNote($0.date, today: model.today) }, size.isWide ? last.map { "\(SleepNights.clock($0.bed))–\(SleepNights.clock($0.wake))" } : nil, model.average("sleep.sleepTimeSeconds", days).map { "\(RangeOption.short(days)) avg \(Fmt.hours($0))" }],
                          long: hours.count > 45) {
                 if let score { Text("score \(Fmt.whole(score))").font(Theme.Typography.label).lineLimit(1) }
             } chart: {
-                Spark(values: hours, style: setting.chartStyle, color: onColor ? Theme.Palette.text.opacity(0.85) : Theme.Palette.sleep, height: nil)
+                // Bedtime at the top of each bar, waking at the bottom. Plain bars of hours until the times are in.
+                if nights.contains(where: { $0 != nil }) {
+                    SleepNights(nights: nights, color: onColor ? Theme.Palette.text.opacity(0.85) : Theme.Palette.sleep, height: nil)
+                } else {
+                    Spark(values: hours, style: setting.chartStyle, color: onColor ? Theme.Palette.text.opacity(0.85) : Theme.Palette.sleep, height: nil)
+                }
             } more: {
                 if let s = model.spread(hours) { StatRow(items: [("Shortest", Fmt.hours(s.low * 3600)), ("Average", Fmt.hours(s.average * 3600)), ("Longest", Fmt.hours(s.high * 3600))]) }
             }

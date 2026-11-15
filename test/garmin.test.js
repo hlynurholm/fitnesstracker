@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { unzip, flattenMetrics } from "../src/garmin.js";
+import { sleepTimes, unzip, flattenMetrics } from "../src/garmin.js";
 import { makeZip } from "./fixtures/make-zip.js";
 import { makeFit } from "./fixtures/make-fit.js";
 import { isFit } from "../src/parsers/fit.js";
@@ -34,4 +34,10 @@ test("flattenMetrics keeps measurements and drops identifiers, timestamps and li
   };
   assert.deepEqual(flattenMetrics(day), { "movement.steps.goal": 9000, "movement.steps.value": 8123, "movement.steps.distanceInMeters": 6100.5, "heartRate.restingValue": 51, "stress.qualifier": "balanced", "bodyBattery.maxValue": 90 });
   assert.deepEqual(flattenMetrics({ lastNightAvg: 58, status: "BALANCED", createTimeStamp: "2026-11-10T07:00:00.0" }, "hrv"), { "hrv.lastNightAvg": 58, "hrv.status": "BALANCED" });
+});
+
+test("sleep times become minutes after midnight, from milliseconds or text", () => {
+  assert.deepEqual(sleepTimes({ sleepStartTimestampGMT: "2026-11-14T23:10:00.0", sleepEndTimestampGMT: Date.UTC(2026, 10, 15, 6, 52) }), { bedMinutesGMT: 23 * 60 + 10, wakeMinutesGMT: 6 * 60 + 52 });
+  assert.deepEqual(sleepTimes({ sleepStartTimestampLocal: Date.UTC(2026, 10, 15, 0, 5) }), { bedMinutesLocal: 5 });
+  assert.deepEqual(sleepTimes({ sleepTimeSeconds: 100 }), {});
 });

@@ -48,7 +48,7 @@ http.createServer((req, res) => {
     return send(200, JSON.stringify(each(url.searchParams.get("startDate"), url.searchParams.get("endDate")).map((date) => {
       const deep = 4800 + wave(date, 1.4, 1200) * 1, rem = 5400 + wave(date, 2.2, 1500), light = 15000 + wave(date, 1.8, 2400), awake = 1500 + wave(date, 1.2, 900);
       return { id: n(date), userProfilePK: 1, calendarDate: date, sleepTimeSeconds: deep + rem + light, deepSleepSeconds: deep, remSleepSeconds: rem, lightSleepSeconds: light, awakeSleepSeconds: awake,
-        sleepStartTimestampGMT: date + "T23:10:00.0", avgSleepStress: 17.5, avgHeartRate: 51, averageRespirationValue: 13.5, awakeCount: 2, sleepScores: { overall: { value: 78 + wave(date, 1.6, 12), qualifierKey: "GOOD" } }, dailyNapDTOS: [] };
+        sleepStartTimestampGMT: new Date(Date.parse(date + "T00:00:00Z") - 50 * 60000 + Math.round(wave(date, 2.3, 50)) * 60000).toISOString(), avgSleepStress: 17.5, avgHeartRate: 51, averageRespirationValue: 13.5, awakeCount: 2, sleepScores: { overall: { value: 78 + wave(date, 1.6, 12), qualifierKey: "GOOD" } }, dailyNapDTOS: [] };
     })));
   }
   const hrv = url.pathname.match(/^\/hrv-service\/hrv\/daily\/(\d{4}-\d{2}-\d{2})\/(\d{4}-\d{2}-\d{2})$/);

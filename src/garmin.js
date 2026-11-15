@@ -118,6 +118,24 @@ export function flattenMetrics(obj, prefix = "", out = {}) {
   return out;
 }
 
+// When the night began and ended, as minutes after midnight, for drawing nights on a clock. Garmin sends the moments
+// as milliseconds or as text, in local time, in GMT, or both; each is kept under its own name so the app knows which
+// it has. The raw timestamps themselves are not stored.
+export function sleepTimes(d) {
+  const minutes = (v) => {
+    const t = typeof v === "number" ? v : typeof v === "string" && v ? Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(v) ? v : v + "Z") : NaN;
+    if (!isFinite(t)) return null;
+    const at = new Date(t);
+    return at.getUTCHours() * 60 + at.getUTCMinutes();
+  };
+  const out = {};
+  for (const [name, key] of [["bedMinutesLocal", "sleepStartTimestampLocal"], ["wakeMinutesLocal", "sleepEndTimestampLocal"], ["bedMinutesGMT", "sleepStartTimestampGMT"], ["wakeMinutesGMT", "sleepEndTimestampGMT"]]) {
+    const m = minutes(d && d[key]);
+    if (m != null) out[name] = m;
+  }
+  return out;
+}
+
 function chunks(from, to, size) {
   const out = [];
   for (let d = new Date(from + "T00:00:00Z"); isoDate(d) <= to; d = new Date(d.getTime() + size * 86400000)) {
@@ -152,7 +170,7 @@ export async function syncGarminDaily(env, { days = 3 } = {}) {
   // Sleep, at most 31 days per request.
   for (const [a, b] of chunks(from, to, 31)) {
     const sleep = await get(`/sleep-service/sleep/dailySleepSummariesByDate?startDate=${a}&endDate=${b}`, "Sleep");
-    for (const d of Array.isArray(sleep) ? sleep : []) put(String(d.calendarDate || "").slice(0, 10), "sleep", d);
+    for (const d of Array.isArray(sleep) ? sleep : []) put(String(d.calendarDate || "").slice(0, 10), "sleep", { ...d, ...sleepTimes(d) });
   }
   // Overnight heart rate variability.
   for (const [a, b] of chunks(from, to, 28)) {

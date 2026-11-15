@@ -331,8 +331,8 @@ struct RunDetail: View {
 struct RouteMap: View {
     let route: RunRoute
     let activity: GarminActivity
-    /// Inside a page that scrolls: the map can be zoomed, turned and tilted with two fingers, but one finger scrolls
-    /// the page instead of moving the map.
+    /// Inside a page that scrolls: the map is moved, zoomed, turned and tilted with two fingers, and one finger
+    /// scrolls the page.
     var fixed = false
     /// The numbers along the top and the strip along the bottom.
     var panels = true
@@ -343,6 +343,14 @@ struct RouteMap: View {
     @State private var picked: Int?
     @State private var stripWidth: CGFloat = 0
     @State private var position: MapCameraPosition = .automatic
+    /// How far the camera is from the ground now, and how far it was when the whole route first fitted.
+    @State private var distance: Double?
+    @State private var fitted: Double?
+    /// The route line thins as the map is zoomed out and thickens, up to a point, as it is zoomed in.
+    private var lineWidth: CGFloat {
+        guard let distance, let fitted, distance > 0 else { return 4 }
+        return min(max(4 * (fitted / distance).squareRoot(), 2), 7)
+    }
     @State private var choice = MapChoice.standard
     private var graph: RunGraph { choice.graph }
     private var look: MapLook { choice.look }
@@ -368,12 +376,12 @@ struct RouteMap: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             MapReader { proxy in
-                Map(position: $position, interactionModes: fixed ? [.zoom, .rotate, .pitch] : .all) {
+                Map(position: $position, interactionModes: .all) {
                     // A light casing under the coloured line keeps the route readable on any map.
                     MapPolyline(coordinates: route.points.map(\.coordinate))
-                        .stroke(.white.opacity(0.95), style: StrokeStyle(lineWidth: 9, lineCap: .round, lineJoin: .round))
+                        .stroke(.white.opacity(0.95), style: StrokeStyle(lineWidth: lineWidth * 1.7, lineCap: .round, lineJoin: .round))
                     ForEach(Array(route.pieces.enumerated()), id: \.offset) { _, piece in
-                        MapPolyline(coordinates: piece.coordinates).stroke(piece.color, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+                        MapPolyline(coordinates: piece.coordinates).stroke(piece.color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
                     }
                     ForEach(route.kilometres, id: \.km) { mark in
                         Annotation("", coordinate: mark.coordinate, anchor: .center) {
@@ -398,6 +406,12 @@ struct RouteMap: View {
                     }
                 }
                 .mapStyle(style)
+                .onMapCameraChange(frequency: .continuous) { context in
+                    distance = context.camera.distance
+                    if fitted == nil { fitted = context.camera.distance }
+                }
+                // Inside a page that scrolls, moving the map takes two fingers, so one finger still scrolls the page.
+                .background { if fixed { TwoFingerPan() } }
                 .onTapGesture { if panels { picked = nearest(to: $0, proxy) } } // a tap off the route clears the point
                 // The map runs on below its frame, which puts the map maker's mark out of sight.
                 .padding(.bottom, -40)
@@ -547,4 +561,40 @@ struct MapChoice: Codable, Equatable {
     }
     static func load(for run: Int) -> MapChoice { decode("mapRun_\(run)") ?? preferred }
     func save(for run: Int) { Self.defaults.set(try? JSONEncoder().encode(self), forKey: "mapRun_\(run)") }
+}
+
+/// Makes the map it sits behind need two fingers to be moved. MapKit has no setting for this, so it finds the map
+/// view next to it and raises the number of touches its own drag recognisers ask for.
+private struct TwoFingerPan: UIViewRepresentable {
+    func makeUIView(context: Context) -> Finder { Finder() }
+    func updateUIView(_ view: Finder, context: Context) { view.apply() }
+
+    final class Finder: UIView {
+        override func didMoveToWindow() { super.didMoveToWindow(); apply() }
+
+        func apply() {
+            // The map is built a moment after this view, so look again shortly.
+            for delay in [0.0, 0.3, 1.0] { DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.restrict() } }
+        }
+
+        private func restrict() {
+            // The nearest view above this one that holds a map.
+            var ancestor = superview
+            while let view = ancestor {
+                if let map = Self.map(in: view) { Self.twoFingers(map); return }
+                ancestor = view.superview
+            }
+        }
+
+        private static func map(in view: UIView) -> MKMapView? {
+            if let map = view as? MKMapView { return map }
+            for child in view.subviews { if let found = map(in: child) { return found } }
+            return nil
+        }
+
+        private static func twoFingers(_ view: UIView) {
+            for recogniser in view.gestureRecognizers ?? [] { if let pan = recogniser as? UIPanGestureRecognizer, pan.maximumNumberOfTouches != 2 || pan.minimumNumberOfTouches < 2 { pan.minimumNumberOfTouches = 2 } }
+            view.subviews.forEach(twoFingers)
+        }
+    }
 }

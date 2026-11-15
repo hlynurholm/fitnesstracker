@@ -160,6 +160,8 @@ struct CardSetting: Codable, Identifiable, Hashable {
     var resolution: Int? = nil
     /// "bars" or "line". nil is the widget's own default.
     var chart: String? = nil
+    /// "absolute" (from zero) or "relative" (from the lowest value). nil is the widget's own choice.
+    var scale: String? = nil
 
     // What the widget shows until a choice is made. Every one of these is an entry in the widget's menu, so the
     // menu can always tick the setting in use.
@@ -182,6 +184,8 @@ struct CardSetting: Codable, Identifiable, Hashable {
         if let chart { return chart == "line" ? .line : .bars }
         return kind == .weight ? .line : MetricSpec.all[kind]?.style ?? .bars
     }
+    /// Until a choice is made: measures that are drawn as a line by nature (heart rate, weight) are relative, counts are absolute.
+    var isRelative: Bool { scale.map { $0 == "relative" } ?? (kind == .weight || (MetricSpec.all[kind].map { $0.style == .line } ?? false)) }
     var id: String { kind.rawValue }
     var shape: WidgetSize { size ?? (kind == .facts ? .large : kind == .all ? .strip : wide || kind.alwaysWide ? .wide : .square) }
 

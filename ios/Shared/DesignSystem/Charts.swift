@@ -461,6 +461,9 @@ struct Spark: View {
     var color: Color = Theme.Palette.accent
     /// Dashed reference line, for a daily goal.
     var goal: Double? = nil
+    /// Relative: the chart runs from just under the lowest value to just over the highest, which shows small changes.
+    /// Absolute: it starts at zero. Bars and line follow the same rule.
+    var relative = false
     /// nil lets the chart fill the height it is given.
     var height: CGFloat? = 44
 
@@ -470,15 +473,16 @@ struct Spark: View {
         let points = Array(values.enumerated()).compactMap { i, v in v.map { (slot: String(i), index: i, value: $0) } }
         let lo = points.map(\.value).min() ?? 0, hi = max(points.map(\.value).max() ?? 1, goal ?? 0)
         let pad = max((hi - lo) * 0.15, 0.5)
+        let base = relative ? lo - pad : 0
         Chart {
             ForEach(points, id: \.index) { p in
                 if style == .bars {
                     // Many bars: fill the slot and drop the rounding, so thin bars read as one shape, not as dots.
-                    BarMark(x: .value("Day", p.slot), y: .value("Value", p.value), width: .ratio(values.count > 60 ? 0.9 : 0.72))
+                    BarMark(x: .value("Day", p.slot), yStart: .value("Base", base), yEnd: .value("Value", p.value), width: .ratio(values.count > 60 ? 0.9 : 0.72))
                         .clipShape(RoundedRectangle(cornerRadius: values.count > 60 ? 0 : 2, style: .continuous))
                         .foregroundStyle(p.index == values.count - 1 ? color : color.opacity(Theme.ChartStyle.dimmedBarOpacity + 0.1))
                 } else {
-                    AreaMark(x: .value("Day", p.slot), yStart: .value("Base", lo - pad), yEnd: .value("Value", p.value))
+                    AreaMark(x: .value("Day", p.slot), yStart: .value("Base", base), yEnd: .value("Value", p.value))
                         .foregroundStyle(LinearGradient(colors: [color.opacity(Theme.ChartStyle.areaOpacity), color.opacity(0)], startPoint: .top, endPoint: .bottom))
                         .interpolationMethod(.monotone)
                     LineMark(x: .value("Day", p.slot), y: .value("Value", p.value))
@@ -494,7 +498,7 @@ struct Spark: View {
         }
         .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
         .chartXScale(domain: slots)
-        .chartYScale(domain: (style == .bars ? 0 : lo - pad)...(hi + pad))
+        .chartYScale(domain: min(base, lo)...(hi + pad))
         .frame(height: height)
         .accessibilityHidden(true)
     }

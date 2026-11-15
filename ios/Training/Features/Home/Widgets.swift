@@ -238,7 +238,7 @@ struct MetricCard: View {
                      long: values.count > 45) {
             if let latest, let goal, goal > 0 { ProgressRing(progress: latest.value / goal, color: tint, size: size.rows == 1 ? 16 : 22) }
         } chart: {
-            Spark(values: values, style: setting.chartStyle, color: tint, goal: goal.map { $0 * spec.scale }, height: nil)
+            Spark(values: values, style: setting.chartStyle, color: tint, goal: goal.map { $0 * spec.scale }, relative: setting.isRelative, height: nil)
         } more: {
             if let s = model.spread(values) {
                 let text = { (v: Double) in spec.digits == 0 ? Fmt.whole(v) : String(format: "%.\(spec.digits)f", v) }
@@ -273,7 +273,8 @@ struct HRVCard: View {
             l.value < (floor ?? -1) ? ("Low", Theme.Palette.danger) : l.value < r.low ? ("Below range", Theme.Palette.warn) : l.value > r.high ? ("Above range", Theme.Palette.warn) : ("Balanced", Theme.Palette.ok)
         } }
         MetricWidget(kind: .hrv, size: size, value: latest.map { Fmt.whole($0.value) } ?? "–", unit: "ms",
-                     caption: ["7d avg", size.isWide ? night.map { "last night \(Fmt.whole($0.value))" } : nil, range.map { "\(own == nil ? "healthy" : "usual") \(Fmt.whole($0.low))–\(Fmt.whole($0.high))" }],
+                     caption: [model.average("hrv.lastNightAvg", setting.range ?? span).map { "\(RangeOption.short(setting.range ?? span)) avg \(Fmt.whole($0))" }, "7d run avg",
+                               size.isWide ? range.map { "\(own == nil ? "healthy" : "usual") \(Fmt.whole($0.low))–\(Fmt.whole($0.high))" } : nil],
                      long: values.count > 45) {
             if let state { Text(state.text).font(Theme.Typography.label).foregroundStyle(state.color).lineLimit(1) }
         } chart: {
@@ -319,7 +320,7 @@ struct SleepCard: View {
                 if nights.contains(where: { $0 != nil }) {
                     SleepNights(nights: nights, color: onColor ? Theme.Palette.text.opacity(0.85) : Theme.Palette.sleep, height: nil)
                 } else {
-                    Spark(values: hours, style: setting.chartStyle, color: onColor ? Theme.Palette.text.opacity(0.85) : Theme.Palette.sleep, height: nil)
+                    Spark(values: hours, style: setting.chartStyle, color: onColor ? Theme.Palette.text.opacity(0.85) : Theme.Palette.sleep, relative: setting.isRelative, height: nil)
                 }
             } more: {
                 if let s = model.spread(hours) { StatRow(items: [("Shortest", Fmt.hours(s.low * 3600)), ("Average", Fmt.hours(s.average * 3600)), ("Longest", Fmt.hours(s.high * 3600))]) }
@@ -360,7 +361,7 @@ struct IntensityCard: View {
         MetricWidget(kind: .intensity, size: size, value: Fmt.whole(week), unit: "min", caption: ["this week", "goal \(Fmt.whole(goal))"], long: values.count > 45) {
             ProgressRing(progress: week / max(goal, 1), color: tint, size: size.rows == 1 ? 16 : 22)
         } chart: {
-            Spark(values: values, style: setting.chartStyle, color: tint, height: nil)
+            Spark(values: values, style: setting.chartStyle, color: tint, relative: setting.isRelative, height: nil)
         } more: {
             if let s = model.spread(values) { StatRow(items: [("Easiest day", Fmt.whole(s.low)), ("Average", Fmt.whole(s.average)), ("Hardest day", Fmt.whole(s.high))]) }
         }
@@ -597,7 +598,7 @@ struct WeightWidget: View {
                      caption: [recent.isEmpty ? latestDate.map { Day.short($0) } : "7d avg", goal.flatMap { g in avg.map { String(format: "%.1f kg to goal", $0 - g) } }], long: values.count > 45) {
             EmptyView()
         } chart: {
-            Spark(values: values, style: setting.chartStyle, color: CardKind.weight.tint, height: nil)
+            Spark(values: values, style: setting.chartStyle, color: CardKind.weight.tint, relative: setting.isRelative, height: nil)
         } more: {
             if let s = model.spread(values) {
                 StatRow(items: [("Lightest", String(format: "%.1f", s.low)), ("Heaviest", String(format: "%.1f", s.high)), ("Goal", goal.map { String(format: "%.1f", $0) } ?? "–")])
@@ -622,7 +623,7 @@ struct NutritionCard: View {
                      long: values.count > 45) {
             if let kcal = day?.calories, kcalTarget > 0 { ProgressRing(progress: kcal / kcalTarget, color: CardKind.nutrition.tint, size: size.rows == 1 ? 16 : 22) }
         } chart: {
-            Spark(values: values, style: setting.chartStyle, color: CardKind.nutrition.tint, goal: kcalTarget > 0 ? kcalTarget : nil, height: nil)
+            Spark(values: values, style: setting.chartStyle, color: CardKind.nutrition.tint, goal: kcalTarget > 0 ? kcalTarget : nil, relative: setting.isRelative, height: nil)
         } more: {
             if let s = model.spread(values) { StatRow(items: [("Lowest", Fmt.whole(s.low)), ("Average", Fmt.whole(s.average)), ("Highest", Fmt.whole(s.high))]) }
         }

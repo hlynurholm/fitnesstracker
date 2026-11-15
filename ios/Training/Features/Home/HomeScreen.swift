@@ -225,6 +225,16 @@ struct HomeScreen: View {
                 Label("Chart: \(line ? "line" : "bars")", systemImage: line ? "chart.xyaxis.line" : "chart.bar.fill")
             }
             }
+            if setting.kind != .hrv, setting.kind != .sleep {
+                Menu {
+                    Picker("Scale", selection: Binding(get: { setting.isRelative ? "relative" : "absolute" }, set: { scale in withAnimation { model.update(setting.kind) { $0.scale = scale } } })) {
+                        Text("Absolute, from zero").tag("absolute")
+                        Text("Relative, from the lowest value").tag("relative")
+                    }
+                } label: {
+                    Label("Scale: \(setting.isRelative ? "relative" : "absolute")", systemImage: "arrow.up.and.down")
+                }
+            }
             Button { askApply = ApplyAll(range: span, every: every) } label: { Label("Use this range and resolution for all widgets", systemImage: "square.on.square") }
         }
         Divider()

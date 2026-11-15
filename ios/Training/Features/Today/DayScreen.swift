@@ -220,19 +220,26 @@ private struct DayContent: View {
         .card()
     }
 
+    @ViewBuilder
     private var actions: some View {
-        Divided {
-            ActionRow(title: "Move or change this session", subtitle: "Swap with another day, or do a different session today", tone: .accent) { showChange = true }
-            if model.workout?.status == "skipped" {
-                ActionRow(title: "Unskip") { Task { await model.setStatus("in_progress") } }
-            } else {
-                ActionRow(title: "Skip this session") { Task { await model.setStatus("skipped") } }
+        let done = model.workout?.status == "done"
+        // A finished day is not moved, changed or skipped. A finished run is deleted from its own page.
+        if !done {
+            Divided {
+                ActionRow(title: "Move or change this session", subtitle: "Swap with another day, or do a different session today", tone: .accent) { showChange = true }
+                if model.workout?.status == "skipped" {
+                    ActionRow(title: "Unskip") { Task { await model.setStatus("in_progress") } }
+                } else {
+                    ActionRow(title: "Skip this session") { Task { await model.setStatus("skipped") } }
+                }
+                if (model.workout?.id ?? 0) > 0 {
+                    ActionRow(title: "Delete this session and its sets", tone: .danger) { confirmDelete = true }
+                }
             }
-            if (model.workout?.id ?? 0) > 0 {
-                ActionRow(title: "Delete this session and its sets", tone: .danger) { confirmDelete = true }
-            }
+            .card()
+        } else if !ran, (model.workout?.id ?? 0) > 0 {
+            Divided { ActionRow(title: "Delete this session and its sets", tone: .danger) { confirmDelete = true } }.card()
         }
-        .card()
     }
 
     /// Beside the heading: the month, and a fetch from Garmin now instead of waiting for the server's half-hourly check.

@@ -156,6 +156,8 @@ struct RunDetail: View {
     @State private var workout: Workout?
     @State private var note = ""
     @State private var saved: String?
+    @State private var confirmDelete = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -192,6 +194,14 @@ struct RunDetail: View {
                         if let saved { Text(saved).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
                     }
                     .card()
+                    Divided { ActionRow(title: "Delete this session", subtitle: "Removes it from the day. The recording stays under Data and sync.", tone: .danger) { confirmDelete = true } }.card()
+                        .confirmationDialog("Delete this session?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                            Button("Delete", role: .destructive) {
+                                Task {
+                                    do { try await API.shared.send("DELETE", "/api/workouts/\(workout.id)"); dismiss() } catch { saved = error.localizedDescription }
+                                }
+                            }
+                        }
                 }
                 // Another file for the same session, such as a second recording of it.
                 VStack(alignment: .leading, spacing: Theme.Space.xs) {

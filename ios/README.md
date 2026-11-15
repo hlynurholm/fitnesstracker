@@ -49,8 +49,7 @@ Everything is set in `Shared/DesignSystem`:
 - `Theme.swift`: the palette, the two typefaces (headings are the system face in its condensed heavy cut; all other
   text is Avenir Next, see `Typography.accessory`), radii and spacing.
 - Colours come from the theme chosen in Settings, Appearance (`ThemeStore`, `ThemeKind`, `ThemeColors.make`): dark,
-  light, colourful (built from one hue: analogous colours for charts, the complement and split complements for
-  contrast), mono dark and mono light. `Theme.Palette` reads the store, so never copy a palette colour into a
+  light, colourful (one hue and its neighbours within 25 degrees, in lighter and darker shades), mono dark and mono light. `Theme.Palette` reads the store, so never copy a palette colour into a
   `static let`. Use `Theme.Palette.onAccent` or `on(_:)` for text on a colour, not `.white`.
 - `Components.swift`: `Backdrop` (the waves behind every screen, with `Grain`), `cardSurface` (cards are Liquid
   Glass, or a grainy gradient when given a `fill`), `Badge`, `OpenGlyph`.

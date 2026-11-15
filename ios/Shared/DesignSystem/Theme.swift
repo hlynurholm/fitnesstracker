@@ -219,19 +219,17 @@ struct ThemeColors {
                                waves: [hex(0xEFEFEF), hex(0xE5E5E5), hex(0xD9D9D9)],
                                fills: pairs([0x1C1C1C, 0x3D3D3D, 0x2E2E2E, 0x555555, 0xD0D0D0, 0xB5B5B5, 0x6E6E6E, 0x4A4A4A]))
         case .colorful:
-            // Colour theory from one hue. The ground and the main accent are that hue. Charts take its neighbours on
-            // the wheel (analogous, 30 and 60 degrees away), the loudest parts take the colours across from it
-            // (the complement at 180 and the split complements at 150 and 210), and one card takes a triad (120).
-            // Good, warning and bad stay green, amber and red, so their meaning does not move with the hue.
+            // One colour and its close neighbours on the wheel, never more than 25 degrees away, so a blue theme
+            // shows blue, a greener blue and a more indigo blue and nothing else. Depth comes from light and dark
+            // and from how strong the colour is. Good, warning and bad are told apart the same way.
             func c(_ degrees: Double, _ saturation: Double, _ brightness: Double) -> Color {
                 Color(hue: (hue + degrees / 360 + 1).truncatingRemainder(dividingBy: 1), saturation: saturation, brightness: brightness)
             }
             return ThemeColors(isDark: true, background: c(0, 0.62, 0.15), surface: c(0, 0.50, 0.23), surfaceRaised: c(0, 0.42, 0.31),
-                               accent: c(0, 0.40, 1), ok: Color(hue: 0.40, saturation: 0.55, brightness: 0.92), warn: Color(hue: 0.12, saturation: 0.65, brightness: 1),
-                               danger: Color(hue: 0.01, saturation: 0.62, brightness: 1), rest: c(0, 0.12, 0.62), test: c(-30, 0.40, 1),
-                               heart: c(210, 0.50, 1), sleep: c(-60, 0.42, 1), energy: c(180, 0.55, 1), calm: c(30, 0.40, 1),
-                               waves: [c(0, 0.62, 0.21), c(0, 0.66, 0.30), c(30, 0.66, 0.40)],
-                               fills: [[c(0, 0.42, 1), c(0, 0.72, 0.86)], [c(180, 0.38, 1), c(150, 0.66, 0.94)], [c(-60, 0.70, 0.70), c(-30, 0.60, 0.95)], [c(120, 0.45, 1), c(120, 0.72, 0.86)]])
+                               accent: c(0, 0.40, 1), ok: c(18, 0.30, 1), warn: c(-12, 0.55, 0.95), danger: c(-22, 0.72, 0.85), rest: c(0, 0.12, 0.62), test: c(-18, 0.38, 1),
+                               heart: c(-22, 0.55, 1), sleep: c(-14, 0.35, 0.92), energy: c(22, 0.55, 1), calm: c(14, 0.28, 1),
+                               waves: [c(0, 0.62, 0.21), c(8, 0.66, 0.30), c(-10, 0.66, 0.40)],
+                               fills: [[c(0, 0.42, 1), c(0, 0.72, 0.86)], [c(20, 0.30, 1), c(14, 0.60, 0.92)], [c(-22, 0.72, 0.62), c(-12, 0.58, 0.92)], [c(10, 0.50, 0.95), c(-8, 0.75, 0.78)]])
         }
     }
 }

@@ -190,7 +190,7 @@ private struct AppearanceCard: View {
                     }
                     .padding(.vertical, Theme.Space.xs)
                 }
-                Text("The app builds the rest from it: neighbouring colours for charts, the opposite colour for contrast, and black or white text wherever each reads best.")
+                Text("The whole app uses this colour and its close neighbours, in lighter and darker shades.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
             }
         }

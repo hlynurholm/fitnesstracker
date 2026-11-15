@@ -71,7 +71,7 @@ struct FactSheet {
 
     static func key(_ key: String, scale: Double = 1) -> (HomeModel, String) -> Double? { { model, day in model.value(key, on: day).map { $0 * scale } } }
 
-    static let all: [FunMetric] = [
+    static var all: [FunMetric] { [
         .init(id: "steps", title: "Steps", icon: "figure.walk", tint: Theme.Palette.accent, best: "Most steps", worst: "Fewest steps", per: "steps a day", sums: true, value: key("movement.steps.value")),
         .init(id: "distance", title: "Distance", icon: "point.topleft.down.to.point.bottomright.curvepath", tint: Theme.Palette.calm, best: "Longest day on foot", worst: "Shortest day on foot", per: "a day", unit: "km", sums: true, digits: 1, value: key("movement.steps.distanceInMeters", scale: 0.001)),
         .init(id: "climb", title: "Climbing", icon: "mountain.2.fill", tint: Theme.Palette.ok, best: "Biggest climb", worst: "Flattest day", per: "a day", unit: "m", sums: true, value: key("movement.floorsAscended.distanceInMeters")),
@@ -83,7 +83,7 @@ struct FactSheet {
         .init(id: "restingHR", title: "Resting heart rate", icon: "heart.fill", tint: Theme.Palette.heart, best: "Lowest resting heart rate", worst: "Highest resting heart rate", per: "on average", unit: "bpm", higherIsBetter: false, value: key("heartRate.restingValue")),
         .init(id: "stress", title: "Stress", icon: "brain.head.profile", tint: Theme.Palette.warn, best: "Calmest day", worst: "Most stressful day", per: "on average", higherIsBetter: false, value: key("stress.avgLevel")),
         .init(id: "battery", title: "Body Battery", icon: "battery.75percent", tint: Theme.Palette.ok, best: "Fullest Body Battery", worst: "Emptiest Body Battery", per: "at its peak", value: key("bodyBattery.maxValue")),
-    ]
+    ] }
 }
 
 /// Random numbers that come out the same for the same seed (SplitMix64), so a day always looks the same.

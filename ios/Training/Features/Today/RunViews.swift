@@ -121,7 +121,7 @@ struct HeartRateZones: View {
                         Text("\(z.from)–\(z.to)").font(Theme.Typography.callout.monospacedDigit())
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, Theme.Space.s)
-                    .foregroundStyle(on ? .white : Theme.Palette.text)
+                    .foregroundStyle(on ? Theme.Palette.onAccent : Theme.Palette.text)
                     .background(on ? Theme.Palette.run : Theme.Palette.fill, in: RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))
                 }
             }

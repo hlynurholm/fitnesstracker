@@ -44,14 +44,23 @@ Live Activity push updates sent by the Worker.
 
 ## Look
 
-Charcoal, with periwinkle, mint, butter and coral. Everything is set in `Shared/DesignSystem`:
+Everything is set in `Shared/DesignSystem`:
 
 - `Theme.swift`: the palette, the two typefaces (headings are the system face in its condensed heavy cut; all other
-  text is Avenir Next, see `Typography.accessory`), radii and spacing. The app is dark only.
-- `Components.swift`: `Backdrop` (the waves of blue behind every screen, with `Grain`), `cardSurface` (cards are
-  dark Liquid Glass, or a grainy gradient when given a `fill`), `Badge`, `OpenGlyph`.
+  text is Avenir Next, see `Typography.accessory`), radii and spacing.
+- Colours come from the theme chosen in Settings, Appearance (`ThemeStore`, `ThemeKind`, `ThemeColors.make`): dark,
+  light, colourful (built from one hue: analogous colours for charts, the complement and split complements for
+  contrast), mono dark and mono light. `Theme.Palette` reads the store, so never copy a palette colour into a
+  `static let`. Use `Theme.Palette.onAccent` or `on(_:)` for text on a colour, not `.white`.
+- `Components.swift`: `Backdrop` (the waves behind every screen, with `Grain`), `cardSurface` (cards are Liquid
+  Glass, or a grainy gradient when given a `fill`), `Badge`, `OpenGlyph`.
 - A view on a card of colour reads `\.onColor` from the environment and draws in the text colour instead of its
   own tint. `CardKind.fill` in `HomeModel.swift` says which Home widgets are cards of colour.
+
+## Tabs
+
+Home, Today, Progress, Diet, Settings. The calendar is a panel inside Today (`CalendarPanel`), opened from the
+button under the week strip. No screen puts buttons in the top bar: Home's edit button is at the bottom of the page.
 
 ## Runs
 
@@ -61,26 +70,25 @@ Progress. The same content (`RunDetail`) also sits inside the day it was recorde
 response, so a run shows in full on its day even when that day's session is a lift. There the map does not pan or
 zoom, so a drag scrolls the day; "Open" leads to the run page. Dragging along the strip under the map, or tapping the route, moves a point along
 it and the top of the map shows distance, time, pace, heart rate and height there. Touching and holding the map opens a menu for what
-the strip draws (elevation, pace or heart rate) and for the map (standard, satellite or hybrid, in 2D or 3D); the
-choices are remembered for every run. The route comes from `lat`/`lon` in the activity's track; activities imported
+the strip draws (elevation, pace or heart rate) and for the map (standard, satellite or hybrid, in 2D or 3D). A
+choice is kept for that run (`MapChoice`); runs without one follow the defaults in Settings, Maps. The route comes from `lat`/`lon` in the activity's track; activities imported
 before the track kept positions get them filled in from the stored file the first time they are opened.
 
 ## Dashboard
 
-Home is a grid of widgets: watch metrics from `GET /api/metrics`, plus training, weight and nutrition from the data
-the other tabs use. `HomeModel.swift` holds the widget list (`CardKind`), what each watch metric widget shows
-(`MetricSpec`, keyed by Garmin's field names) and the layout, which is saved on the phone.
+Home is a grid of widgets (`Features/Home/Widgets.swift`): watch metrics from `GET /api/metrics`, plus training,
+weight and nutrition from the data the other tabs use. `HomeModel.swift` holds the widget list (`CardKind`), what
+each watch metric widget shows (`MetricSpec`, keyed by Garmin's field names) and the layout, saved on the phone.
 
-- Touch and hold a widget: half or full width, the range of days its chart covers (2 days to 6 months, per widget),
-  "use this range and resolution for all widgets" (asks twice, sets both on every widget), remove.
-- The grid button enters edit mode: drag a widget to move it, drag or tap the handle in its bottom right corner to
-  resize it, tap the minus in its top left corner to remove it, and use the plus button to add widgets back.
-- The same menu sets each widget's resolution (every day, 2 or 3 day, weekly, 2 week or monthly averages) and chart
-  type (bars or line). The menu always ticks the setting in use; there is no "auto" entry. Until a choice is made a
-  widget uses `CardSetting.span`, `every` and `chartStyle`. A range longer than the stored history asks the server
-  once for older data.
-- "Next session" shows today's session until it is done, then tomorrow's. "Last run" draws the route of the latest
-  run. Both open the full page on tap.
+- Five sizes (`WidgetSize`), as width × height in shares of the screen's width: ½ × ¼, ½ × ½, 1 × ¼, 1 × ½, 1 × 1.
+  `WidgetGrid` places them in two columns of quarter-height rows. A widget shows more as it grows: name and number
+  at quarter height, a chart from half height (`MetricWidget`), and at 1 × 1 the lowest, average and highest, the
+  session's lifts (`SessionCard`) or the whole run map (`LastRunCard`).
+- Touch and hold a widget: size, range of days (2 days to 6 months), resolution, chart type, "use this range and
+  resolution for all widgets" (asks twice), remove.
+- "Edit Home" at the bottom of the page: drag a widget to move it, tap the size badge in its corner for the next
+  size, tap the minus to remove it, "Add widget" to bring one back.
+- Launch with `TRAINING_LAYOUT='[{"kind":"steps","wide":true,"size":"strip"}, ...]'` to look at an arrangement.
 - Every chart widget is built the same way: the number, the chart (`ValueAndChart`), then one line under it
   (`ChartCaption`) with short wording such as "goal 9,000 · 6m avg 8,601". Keep new widgets to that.
 - HRV is drawn as dots on a line over a shaded band (`BandSpark`). The band is the watch's own balanced range for

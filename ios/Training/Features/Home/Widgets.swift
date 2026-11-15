@@ -573,7 +573,7 @@ struct WeekCard: View {
                 VStack(spacing: Theme.Space.xs) {
                     ZStack {
                         Circle().fill(kind.map { Theme.Palette.kind($0) } ?? Theme.Palette.fill)
-                        if kind != nil, circle >= 20 { Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(.white) }
+                        if let kind, circle >= 20 { Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(Theme.Palette.on(Theme.Palette.kind(kind))) }
                     }
                     .frame(width: circle, height: circle)
                     .overlay { if date == model.today { Circle().stroke(Theme.Palette.accent, lineWidth: 2).padding(-3) } }
@@ -691,7 +691,8 @@ struct FactTile: View {
 
     var body: some View {
         let solid = paint == .solid
-        let accent = solid ? Color.white : fact.tint
+        let ink = Theme.Palette.on(fact.tint) // what reads on the solid tile: black or white
+        let accent = solid ? ink : fact.tint
         HStack(spacing: Theme.Space.m) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: Theme.Space.xs) {
@@ -700,11 +701,11 @@ struct FactTile: View {
                 }
                 .foregroundStyle(accent.opacity(solid ? 0.85 : 1))
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(fact.value).font(wide ? Theme.Typography.timer : Theme.Typography.numeral).lineLimit(1).minimumScaleFactor(0.5).foregroundStyle(solid ? Color.white : Theme.Palette.text)
-                    if !fact.unit.isEmpty { Text(fact.unit).font(Theme.Typography.callout).foregroundStyle(solid ? Color.white.opacity(0.8) : Theme.Palette.muted) }
+                    Text(fact.value).font(wide ? Theme.Typography.timer : Theme.Typography.numeral).lineLimit(1).minimumScaleFactor(0.5).foregroundStyle(solid ? ink : Theme.Palette.text)
+                    if !fact.unit.isEmpty { Text(fact.unit).font(Theme.Typography.callout).foregroundStyle(solid ? ink.opacity(0.8) : Theme.Palette.muted) }
                 }
                 if !fact.detail.isEmpty {
-                    Text(fact.detail).font(Theme.Typography.caption).foregroundStyle(solid ? Color.white.opacity(0.85) : Theme.Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    Text(fact.detail).font(Theme.Typography.caption).foregroundStyle(solid ? ink.opacity(0.85) : Theme.Palette.muted).fixedSize(horizontal: false, vertical: true)
                 }
             }
             if wide {

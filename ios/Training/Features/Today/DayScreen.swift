@@ -431,7 +431,7 @@ private struct FinishSheet: View {
                 ForEach(1...10, id: \.self) { i in
                     Button("\(i)") { rpe = i }
                         .font(Theme.Typography.headline).frame(maxWidth: .infinity).padding(.vertical, Theme.Space.s)
-                        .foregroundStyle(rpe == i ? .white : Theme.Palette.text)
+                        .foregroundStyle(rpe == i ? Theme.Palette.onAccent : Theme.Palette.text)
                         .background(rpe == i ? Theme.Palette.accent : Theme.Palette.fill, in: RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))
                         .buttonStyle(.plain)
                 }

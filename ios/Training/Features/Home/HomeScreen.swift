@@ -45,7 +45,7 @@ struct HomeScreen: View {
                 HStack(spacing: Theme.Space.m) {
                     Button { adding = true } label: { Label("Add widget", systemImage: "plus").font(Theme.Typography.label).padding(.horizontal, Theme.Space.l).frame(height: 44).glass() }
                     Button { withAnimation(.snappy) { editing = false; dragging = nil } } label: {
-                        Text("Done").font(Theme.Typography.label).foregroundStyle(.white).padding(.horizontal, Theme.Space.xl).frame(height: 44).background(Theme.Palette.accent, in: Capsule())
+                        Text("Done").font(Theme.Typography.label).foregroundStyle(Theme.Palette.onAccent).padding(.horizontal, Theme.Space.xl).frame(height: 44).background(Theme.Palette.accent, in: Capsule())
                     }
                 }
                 .buttonStyle(.plain).foregroundStyle(Theme.Palette.text).padding(.bottom, Theme.Space.s)
@@ -148,7 +148,7 @@ struct HomeScreen: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             withAnimation(.snappy) { model.update(setting.kind) { $0.size = setting.shape.next; $0.wide = setting.shape.next.isWide } }
         } label: {
-            Text(setting.shape.label).font(Theme.Typography.label).foregroundStyle(.white)
+            Text(setting.shape.label).font(Theme.Typography.label).foregroundStyle(Theme.Palette.onAccent)
                 .padding(.horizontal, Theme.Space.s).frame(height: 30).background(Theme.Palette.accent, in: Capsule())
                 .overlay(Capsule().stroke(Theme.Palette.background, lineWidth: 2))
                 .padding(8).contentShape(Rectangle())

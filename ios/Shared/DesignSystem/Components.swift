@@ -285,7 +285,7 @@ struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.Typography.headline)
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.Palette.onAccent)
             .frame(maxWidth: .infinity)
             .padding(.vertical, Theme.Space.m)
             .background(Theme.Palette.accent.opacity(configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))

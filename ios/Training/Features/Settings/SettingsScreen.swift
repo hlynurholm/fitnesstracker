@@ -58,6 +58,8 @@ struct SettingsScreen: View {
             }
             .buttonStyle(.plain).card()
 
+            AppearanceCard()
+
             VStack(alignment: .leading, spacing: Theme.Space.m) {
                 CardTitle("Maps", note: "for runs you have not set by hand")
                 LabeledField(label: "Map") {
@@ -155,5 +157,51 @@ struct SettingsScreen: View {
             await AppModel.shared.load()
             toast = "Settings saved"
         } catch { toast = error.localizedDescription }
+    }
+}
+
+/// Choice of colour theme. The colourful one is built from a single colour picked here.
+private struct AppearanceCard: View {
+    @Bindable private var store = ThemeStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            CardTitle("Appearance")
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Space.s), count: 3), spacing: Theme.Space.s) {
+                ForEach(ThemeKind.allCases) { kind in
+                    Button { withAnimation { store.kind = kind } } label: { swatch(kind) }.buttonStyle(.plain)
+                        .accessibilityLabel("\(kind.title) theme").accessibilityAddTraits(store.kind == kind ? .isSelected : [])
+                }
+            }
+            if store.kind == .colorful {
+                LabeledField(label: "Main colour") {
+                    // Every hue once round the wheel; the thumb sits on the chosen one.
+                    Slider(value: $store.hue, in: 0...0.999)
+                        .tint(.clear)
+                        .background(LinearGradient(colors: stride(from: 0.0, through: 1.0, by: 0.1).map { Color(hue: $0, saturation: 0.7, brightness: 1) }, startPoint: .leading, endPoint: .trailing)
+                            .frame(height: 8).clipShape(Capsule()).padding(.horizontal, 2))
+                }
+                Text("The app builds the rest from it: neighbouring colours for charts, the opposite colour for contrast, and black or white text wherever each reads best.")
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+            }
+        }
+        .card()
+    }
+
+    /// A small picture of a theme: its ground, a card, and three of its colours.
+    private func swatch(_ kind: ThemeKind) -> some View {
+        let colors = ThemeColors.make(kind, hue: store.hue)
+        return VStack(spacing: Theme.Space.xs) {
+            VStack(alignment: .leading, spacing: 5) {
+                LinearGradient(colors: colors.fills[0], startPoint: .topLeading, endPoint: .bottomTrailing).frame(height: 16).clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                HStack(spacing: 4) { ForEach([colors.accent, colors.energy, colors.calm], id: \.self) { Circle().fill($0).frame(width: 9, height: 9) } }
+            }
+            .padding(Theme.Space.s).frame(maxWidth: .infinity, alignment: .leading)
+            .background(colors.surface, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .padding(6)
+            .background(colors.background, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).strokeBorder(store.kind == kind ? Theme.Palette.accent : Theme.Palette.separator, lineWidth: store.kind == kind ? 2.5 : 1))
+            Text(kind.title).font(Theme.Typography.label).foregroundStyle(store.kind == kind ? Theme.Palette.text : Theme.Palette.muted)
+        }
     }
 }

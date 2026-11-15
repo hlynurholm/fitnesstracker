@@ -158,7 +158,7 @@ private struct SetRowView: View {
             }
             Button { model.tick(entry, row.id) } label: {
                 Image(systemName: "checkmark").font(.headline)
-                    .foregroundStyle(row.saved ? .white : Theme.Palette.muted)
+                    .foregroundStyle(row.saved ? Theme.Palette.onAccent : Theme.Palette.muted)
                     .frame(width: 44, height: 44)
                     .background(row.saved ? Theme.Palette.ok : Theme.Palette.fill, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
             }

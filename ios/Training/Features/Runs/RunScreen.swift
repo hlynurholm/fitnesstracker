@@ -219,7 +219,7 @@ struct RunDetail: View {
     }
 
     /// Heart rate zones 1 to 5, the same in the chart and in the bar.
-    private static let zoneColors = [Theme.Palette.rest, Theme.Palette.calm, Theme.Palette.ok, Theme.Palette.energy, Theme.Palette.heart]
+    private static var zoneColors: [Color] { [Theme.Palette.rest, Theme.Palette.calm, Theme.Palette.ok, Theme.Palette.energy, Theme.Palette.heart] }
 
     private func chartCard(_ title: String, note: String?, @ViewBuilder chart: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {

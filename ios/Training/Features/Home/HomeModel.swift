@@ -52,13 +52,15 @@ enum CardKind: String, CaseIterable, Codable {
     /// Widgets that are a whole card of colour, and whether that colour is light (so what sits on it turns dark).
     var fill: (colors: [Color], light: Bool)? {
         switch self {
-        case .today: (Theme.Palette.periwinkle, false)
-        case .steps: (Theme.Palette.butter, true)
-        case .sleep: (Theme.Palette.dusk, false)
-        case .intensity: (Theme.Palette.coral, false)
+        case .today: Self.filled(Theme.Palette.periwinkle)
+        case .steps: Self.filled(Theme.Palette.butter)
+        case .sleep: Self.filled(Theme.Palette.dusk)
+        case .intensity: Self.filled(Theme.Palette.coral)
         default: nil
         }
     }
+
+    private static func filled(_ colors: [Color]) -> (colors: [Color], light: Bool) { (colors, Theme.Palette.isLight(colors[0])) }
 
     /// Cards that only make sense across the full width.
     var alwaysWide: Bool { self == .facts || self == .all }
@@ -123,7 +125,8 @@ struct MetricSpec {
     var scale: Double = 1
     var digits: Int = 0
 
-    static let all: [CardKind: MetricSpec] = [
+    // Built on each use, so the colours follow the theme.
+    static var all: [CardKind: MetricSpec] { [
         .steps: .init(title: "Steps", icon: "figure.walk", tint: Theme.Palette.accent, key: "movement.steps.value", style: .bars, goalKey: "movement.steps.goal"),
         .restingHR: .init(title: "Resting HR", icon: "heart.fill", tint: Theme.Palette.heart, key: "heartRate.restingValue", unit: "bpm"),
         .hrv: .init(title: "HRV", icon: "waveform.path.ecg", tint: Theme.Palette.test, key: "hrv.lastNightAvg", unit: "ms"),
@@ -138,7 +141,7 @@ struct MetricSpec {
         .bodyFat: .init(title: "Body fat", icon: "percent", tint: Theme.Palette.calm, key: "body.fatPercent", unit: "%", digits: 1),
         .leanMass: .init(title: "Lean mass", icon: "figure.strengthtraining.traditional", tint: Theme.Palette.calm, key: "body.leanMassKg", unit: "kg", digits: 1),
         .spo2: .init(title: "Blood oxygen", icon: "drop.fill", tint: Theme.Palette.heart, key: "pulseOx.avgValue", unit: "%"),
-    ]
+    ] }
 }
 
 /// One card's place in the grid.

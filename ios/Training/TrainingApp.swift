@@ -12,7 +12,7 @@ struct TrainingApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView().tint(Theme.Palette.accent).font(Theme.Typography.body).preferredColorScheme(.dark) // the stylized look is designed on charcoal
+            RootView().font(Theme.Typography.body)
         }
     }
 }
@@ -40,6 +40,8 @@ private struct RootView: View {
                 ProgressView()
             }
         }
+        // The theme sets the accent colour and whether the system draws light or dark.
+        .tint(Theme.Palette.accent).preferredColorScheme(ThemeStore.shared.colors.isDark ? .dark : .light)
         .task(id: api.hasToken) { if api.hasToken { await app.load() } }
         // Coming to the front: replay queued writes, then pick up anything new from Apple Health.
         .onChange(of: scenePhase, initial: true) { _, phase in

@@ -70,6 +70,13 @@ struct SettingsScreen: View {
                     }
                     .pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
                 }
+                LabeledField(label: "Lift order") {
+                    Picker("Lift order", selection: Binding(get: { values["lift_rotation"] == "0" ? "0" : "1" }, set: { values["lift_rotation"] = $0 })) {
+                        Text("Continue where I left off (a skipped lift comes next)").tag("1")
+                        Text("Fixed: A on Monday, B on Wednesday, C on Friday").tag("0")
+                    }
+                    .pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
+                }
             }.card()
 
             VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -122,7 +129,7 @@ struct SettingsScreen: View {
 
     private func save() async {
         var body: [String: Any?] = [:]
-        for key in ["program_start_date", "phase_override", "goal_weight_kg", "calorie_target", "protein_target", "fun_budget_kcal", "max_hr"] {
+        for key in ["program_start_date", "phase_override", "lift_rotation", "goal_weight_kg", "calorie_target", "protein_target", "fun_budget_kcal", "max_hr"] {
             let v = (values[key] ?? "").trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
             body[key] = v.isEmpty ? nil : v
         }

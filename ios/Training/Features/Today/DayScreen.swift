@@ -111,6 +111,7 @@ private struct DayContent: View {
                     if day.deload { Badge("Deload week", tone: .warn) }
                     if day.testWeek { Badge("Test week", tone: .warn) }
                     if day.moved { Badge("Moved from the plan", tone: .accent) }
+                    if day.rotated { Badge("Next in your lift order", tone: .accent) }
                     if day.beyondPlan { Badge("Beyond the planned weeks") }
                 }
             }
@@ -135,6 +136,9 @@ private struct DayContent: View {
             }
             if day.moved, model.templateKey == day.templateKey, let planned = model.program.templates[day.defaultTemplateKey] {
                 Text("The plan has \(planned.name) today. You moved it.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+            }
+            if day.rotated, model.templateKey == day.templateKey, let planned = model.program.templates[day.defaultTemplateKey] {
+                Text("A skipped lift comes next, so this is not \(planned.name), the usual one for a \(day.weekdayName). Lift order is in Settings.").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
             }
             if model.templateKey == day.templateKey {
                 ForEach(day.extras ?? [], id: \.self) { Text($0).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }

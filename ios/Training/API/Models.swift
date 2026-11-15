@@ -163,6 +163,8 @@ struct DayInfo: Decodable {
     var horizon: String? = nil
     var concreteTo: String? = nil
     var estimateTo: String? = nil
+    /// The server put the next lift in the order here instead of the weekday's own (a skipped lift comes next).
+    var rotated: Bool { !moved && templateKey != defaultTemplateKey }
 }
 
 struct WeekDay: Decodable, Identifiable {
@@ -263,6 +265,7 @@ struct ScheduleDay: Decodable, Identifiable, Hashable {
     let testWeek: Bool
     let workouts: [Workout]
     var horizon: String? = nil
+    var rotated: Bool { !moved && templateKey != defaultTemplateKey }
     var id: String { date }
     /// How firm the plan is: anything logged or moved is real, otherwise the server's planning horizon decides.
     var outlook: Outlook { main != nil || moved ? .concrete : Outlook(horizon) }

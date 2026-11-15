@@ -138,7 +138,7 @@ struct SessionChangeSheet: View {
                 if let error { Text(error).foregroundStyle(Theme.Palette.danger) }
                 if let day {
                     Section {
-                        Row(title: day.name, subtitle: [day.subtitle, day.deload ? "deload week" : nil, day.testWeek ? "test week" : nil, day.moved ? "moved, the plan has \(templates[day.defaultTemplateKey]?.name ?? "")" : nil].compactMap { $0 }.joined(separator: " · ")) {
+                        Row(title: day.name, subtitle: [day.subtitle, day.deload ? "deload week" : nil, day.testWeek ? "test week" : nil, day.moved ? "moved, the plan has \(templates[day.defaultTemplateKey]?.name ?? "")" : nil, day.rotated ? "next in your lift order, the weekday plan has \(templates[day.defaultTemplateKey]?.name ?? "")" : nil].compactMap { $0 }.joined(separator: " · ")) {
                             if let s = day.main?.status { Badge(s.replacingOccurrences(of: "_", with: " "), tone: s == "done" ? .ok : s == "skipped" ? .danger : .accent) }
                         }
                         if day.moved { Button("Back to the plan: \(templates[day.defaultTemplateKey]?.name ?? "")") { apply { try await API.shared.send("PUT", "/api/schedule/\(date)", ["template_key": nil]) } } }

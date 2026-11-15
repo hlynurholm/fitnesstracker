@@ -248,7 +248,7 @@ final class ThemeStore {
     private init() {
         let defaults = UserDefaults.standard
         let kind = defaults.string(forKey: "themeKind").flatMap(ThemeKind.init) ?? .dark
-        let hue = defaults.object(forKey: "themeHue") as? Double ?? 0.58
+        let hue = defaults.object(forKey: "themeHue") as? Double ?? 0.60
         self.kind = kind; self.hue = hue; colors = .make(kind, hue: hue)
     }
 }

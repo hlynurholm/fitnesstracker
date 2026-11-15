@@ -163,23 +163,32 @@ struct SettingsScreen: View {
 /// Choice of colour theme. The colourful one is built from a single colour picked here.
 private struct AppearanceCard: View {
     @Bindable private var store = ThemeStore.shared
+    /// The six main colours of the colourful theme, as positions on the colour wheel.
+    private static let mains: [(name: String, hue: Double)] = [("Blue", 0.60), ("Green", 0.40), ("Red", 0.0), ("Yellow", 0.14), ("Orange", 0.08), ("Purple", 0.73)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             CardTitle("Appearance")
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Space.s), count: 3), spacing: Theme.Space.s) {
                 ForEach(ThemeKind.allCases) { kind in
-                    Button { withAnimation { store.kind = kind } } label: { swatch(kind) }.buttonStyle(.plain)
+                    Button { store.kind = kind } label: { swatch(kind) }.buttonStyle(.plain)
                         .accessibilityLabel("\(kind.title) theme").accessibilityAddTraits(store.kind == kind ? .isSelected : [])
                 }
             }
             if store.kind == .colorful {
                 LabeledField(label: "Main colour") {
-                    // Every hue once round the wheel; the thumb sits on the chosen one.
-                    Slider(value: $store.hue, in: 0...0.999)
-                        .tint(.clear)
-                        .background(LinearGradient(colors: stride(from: 0.0, through: 1.0, by: 0.1).map { Color(hue: $0, saturation: 0.7, brightness: 1) }, startPoint: .leading, endPoint: .trailing)
-                            .frame(height: 8).clipShape(Capsule()).padding(.horizontal, 2))
+                    HStack(spacing: Theme.Space.s) {
+                        ForEach(Self.mains, id: \.name) { main in
+                            let on = abs(store.hue - main.hue) < 0.005
+                            Button { store.hue = main.hue } label: {
+                                Circle().fill(Color(hue: main.hue, saturation: 0.7, brightness: 1)).frame(width: 30, height: 30)
+                                    .overlay(Circle().strokeBorder(Theme.Palette.text, lineWidth: on ? 2.5 : 0).padding(-4))
+                            }
+                            .buttonStyle(.plain).frame(maxWidth: .infinity)
+                            .accessibilityLabel(main.name).accessibilityAddTraits(on ? .isSelected : [])
+                        }
+                    }
+                    .padding(.vertical, Theme.Space.xs)
                 }
                 Text("The app builds the rest from it: neighbouring colours for charts, the opposite colour for contrast, and black or white text wherever each reads best.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)

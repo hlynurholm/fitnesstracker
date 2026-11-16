@@ -19,8 +19,9 @@ extension HealthSync {
             var t = evening.addingTimeInterval(5.5 * 3600)
             return plan.map { minutes, lane in defer { t = t.addingTimeInterval(minutes * 60) }; return SleepStage(start: t, end: t.addingTimeInterval(minutes * 60), lane: lane) }
         }
-        guard enabled, Self.available else { return [] }
-        try? await store.requestAuthorization(toShare: [], read: Self.readTypes)
+        // Asks for Sleep alone, whether or not the nutrition sync was ever connected. iOS shows the sheet once.
+        guard Self.available else { return [] }
+        try? await store.requestAuthorization(toShare: [], read: [HKCategoryType(.sleepAnalysis)])
         let query = HKSampleQueryDescriptor(
             predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: HKQuery.predicateForSamples(withStart: evening, end: noon))],
             sortDescriptors: [SortDescriptor(\.startDate)])

@@ -206,7 +206,7 @@ export function shapeTimeline(heart, battery) {
     const d = (descriptors || []).find((x) => pattern.test(String(x[keyField] || "")));
     return d && Number.isInteger(d[indexField]) ? d[indexField] : fallback;
   };
-  const out = { hr: [], battery: [], events: [] };
+  const out = { v: 2, hr: [], battery: [], events: [] }; // v: bump to refetch kept days after a change of shape
   const hrT = column(heart && heart.heartRateValueDescriptors, "key", "index", /time/i, 0);
   const hrV = column(heart && heart.heartRateValueDescriptors, "key", "index", /heart/i, 1);
   const buckets = new Map();
@@ -225,8 +225,9 @@ export function shapeTimeline(heart, battery) {
     const bbT = column(d, "bodyBatteryValueDescriptorKey", "bodyBatteryValueDescriptorIndex", /time/i, 0);
     const bbV = column(d, "bodyBatteryValueDescriptorKey", "bodyBatteryValueDescriptorIndex", /level/i, 2);
     for (const row of report.bodyBatteryValuesArray || []) {
-      const t = Number(row && row[bbT]), v = Number(row && row[bbV]);
-      if (isFinite(t) && isFinite(v) && row[bbV] != null) out.battery.push([t, v]);
+      const at = row && row.length > bbV ? bbV : 1; // with chunks the rows are [time, level]
+      const t = Number(row && row[bbT]), v = Number(row && row[at]);
+      if (isFinite(t) && isFinite(v) && row[at] != null) out.battery.push([t, v]);
     }
     out.battery.sort((a, b) => a[0] - b[0]);
     for (const e of report.bodyBatteryActivityEvent || []) {
@@ -247,7 +248,7 @@ export async function garminTimeline(env, date, today) {
   const kept = row ? (() => { try { return JSON.parse(row.data); } catch { return null; } })() : null;
   const age = row ? Date.now() - Date.parse(row.updated_at.replace(" ", "T") + "Z") : Infinity;
   const settled = date < isoDate(new Date(Date.parse(today + "T00:00:00Z") - 86400000));
-  if (kept && (settled ? (kept.hr.length || kept.battery.length) : age < 15 * 60000)) return kept;
+  if (kept && kept.v === 2 && (settled ? (kept.hr.length || kept.battery.length) : age < 15 * 60000)) return kept;
   if (!garminConfigured(env)) return kept || { hr: [], battery: [], events: [], error: "GARMIN_API_KEY is not set" };
   const base = (env.GARMIN_API_BASE || DEFAULT_BASE).replace(/\/+$/, "");
   try {
@@ -255,7 +256,7 @@ export async function garminTimeline(env, date, today) {
     const get = async (path, what) => { try { return await (await garminFetch(base, path, auth, what)).json(); } catch { return null; } };
     const [heart, battery] = await Promise.all([
       get(`/wellness-service/wellness/dailyHeartRate?date=${date}`, "Heart rate"),
-      get(`/wellness-service/wellness/bodyBattery/reports/daily?startDate=${date}&endDate=${date}`, "Body Battery"),
+      get(`/wellness-service/wellness/bodyBattery/reports/daily?startDate=${date}&endDate=${date}&chunks=96`, "Body Battery"),
     ]);
     const shaped = shapeTimeline(heart, battery);
     if (!shaped.hr.length && !shaped.battery.length && kept) return kept;

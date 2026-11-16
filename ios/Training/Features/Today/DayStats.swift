@@ -192,14 +192,14 @@ struct DayStats: View {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Theme.Palette.fill)
-                        Capsule().fill(LinearGradient(colors: [Theme.Palette.warn, Theme.Palette.ok], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: max(geo.size.width * (high - low) / 100, 10)).offset(x: geo.size.width * low / 100)
+                        Capsule().fill(LinearGradient(colors: [Theme.Palette.ok, Theme.Palette.warn], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(geo.size.width * (high - low) / 100, 10)).offset(x: geo.size.width * (100 - high) / 100) // 100 on the left, 0 on the right
                     }
                 }
                 .frame(height: 14)
                 HStack(alignment: .top) {
-                    small("Lowest", Fmt.whole(low))
                     small("Highest", Fmt.whole(high), delta: Delta(value: high, usual: usual("bodyBattery.maxValue")), note: "usually on waking")
+                    small("Lowest", Fmt.whole(low))
                     if let stress = n("stress.avgLevel") { small("Stress", Fmt.whole(stress), delta: Delta(value: stress, usual: usual("stress.avgLevel"), lowerIsGood: true), note: n("stress.maxLevel").map { "peak \(Fmt.whole($0))" }) }
                 }
             }
@@ -380,28 +380,26 @@ struct DayClock: View {
                         context.draw(Text(Fmt.whole(level)).font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted), at: CGPoint(x: 2, y: y + 2), anchor: .topLeading)
                     }
                     // Body Battery as a filled shape behind everything.
-                    let levels = t.battery.filter { $0.count > 1 }
-                    if let first = levels.first, let last = levels.last {
-                        var area = Path()
-                        area.move(to: CGPoint(x: x(first[0]), y: size.height))
-                        for p in levels { area.addLine(to: CGPoint(x: x(p[0]), y: size.height * (1 - p[1] / 100))) }
-                        area.addLine(to: CGPoint(x: x(last[0]), y: size.height)); area.closeSubpath()
+                    let points = Self.quarters(t.battery).map { CGPoint(x: x($0[0]), y: size.height * (1 - $0[1] / 100)) }
+                    let line = Self.curve(points)
+                    if let first = points.first, let last = points.last {
+                        var area = line
+                        area.addLine(to: CGPoint(x: last.x, y: size.height)); area.addLine(to: CGPoint(x: first.x, y: size.height)); area.closeSubpath()
                         context.fill(area, with: .linearGradient(Gradient(colors: [Theme.Palette.text.opacity(0.38), Theme.Palette.text.opacity(0.04)]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
                     }
                     // Heart rate as bars from the floor: blue at rest, orange when raised, grey during an activity.
                     if let high = beats.last {
-                        let bar = max(size.width / 288 - 0.4, 0.8)
-                        for p in t.hr where p.count > 1 {
+                        let bar = size.width / 288 + 0.5 // a hair wider than its slot, so no gaps show between bars
+                        let hr = t.hr.filter { $0.count > 1 }
+                        for (i, p) in hr.enumerated() {
                             let active = spans.contains { !$0.sleep && p[0] >= $0.start && p[0] <= $0.end }
-                            let h = size.height * 0.9 * CGFloat(max(p[1] - 35, 2) / max(high - 35, 1))
+                            // Height eased with the neighbours on either side; the colour keeps the reading itself.
+                            let near = [i > 0 ? hr[i - 1] : p, p, p, i + 1 < hr.count ? hr[i + 1] : p].filter { abs($0[0] - p[0]) < 900_000 }
+                            let eased = active ? p[1] : near.map { $0[1] }.reduce(0, +) / Double(near.count)
+                            let h = size.height * 0.9 * CGFloat(max(eased - 35, 2) / max(high - 35, 1))
                             context.fill(Path(CGRect(x: x(p[0]), y: size.height - h, width: bar, height: h)),
                                          with: .color(active ? Theme.Palette.muted : p[1] <= rest ? Theme.Palette.calm : Theme.Palette.energy))
                         }
-                    }
-                    var line = Path()
-                    for (i, p) in levels.enumerated() {
-                        let point = CGPoint(x: x(p[0]), y: size.height * (1 - p[1] / 100))
-                        if i == 0 { line.move(to: point) } else { line.addLine(to: point) }
                     }
                     context.stroke(line, with: .color(Theme.Palette.text), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 }
@@ -448,6 +446,23 @@ struct DayClock: View {
             RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 12, height: line ? 3 : 10)
             Text(name).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
         }
+    }
+
+    /// Body Battery as one level per quarter hour (Garmin sends each interval's low and high).
+    private static func quarters(_ rows: [[Double]]) -> [[Double]] {
+        var sums: [Double: (Double, Double)] = [:]
+        for r in rows where r.count > 1 { let k = (r[0] / 900_000).rounded(.down); sums[k] = ((sums[k]?.0 ?? 0) + r[1], (sums[k]?.1 ?? 0) + 1) }
+        return sums.keys.sorted().map { [$0 * 900_000 + 450_000, sums[$0]!.0 / sums[$0]!.1] }
+    }
+
+    /// A curve through the points: each stretch bends through the midpoints, which rounds the corners off.
+    private static func curve(_ points: [CGPoint]) -> Path {
+        var path = Path()
+        guard let first = points.first else { return path }
+        path.move(to: first)
+        for (a, b) in zip(points, points.dropFirst()) { path.addQuadCurve(to: CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2), control: a) }
+        if let last = points.last { path.addLine(to: last) }
+        return path
     }
 
     private struct Span { let start: Double; let end: Double; let sleep: Bool }

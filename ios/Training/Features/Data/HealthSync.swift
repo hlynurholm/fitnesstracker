@@ -23,7 +23,7 @@ final class HealthSync {
         didSet { UserDefaults.standard.set(status, forKey: "healthSyncStatus") }
     }
 
-    private let store = HKHealthStore()
+    let store = HKHealthStore()
 
     /// Health quantity, its unit, and the API field it becomes.
     private static let nutrients: [(id: HKQuantityTypeIdentifier, unit: HKUnit, field: String)] = [
@@ -45,8 +45,8 @@ final class HealthSync {
         (.waistCircumference, .meterUnit(with: .centi), 1, "waistCm"),
     ]
 
-    private static var readTypes: Set<HKObjectType> {
-        Set(nutrients.map { HKQuantityType($0.id) } + measurements.map { HKQuantityType($0.id) } + [HKQuantityType(.bodyMass)])
+    static var readTypes: Set<HKObjectType> {
+        Set(nutrients.map { HKQuantityType($0.id) } + measurements.map { HKQuantityType($0.id) } + [HKQuantityType(.bodyMass), HKCategoryType(.sleepAnalysis)])
     }
 
     func connect() async {

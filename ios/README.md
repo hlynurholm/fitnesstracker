@@ -146,3 +146,4 @@ SIMCTL_CHILD_TRAINING_BASE_URL=http://localhost:8787 SIMCTL_CHILD_TRAINING_TOKEN
 A launch straight after `simctl install` sometimes starts without these variables; launch again if the app shows
 the connection screen.
 - The day section of Today opens with `DayClock` (in `DayStats.swift`): heart rate and Body Battery from midnight to midnight from `GET /api/timeline/<date>`, with sleep and activities shaded. Garmin gives no stress through the day in the Personal API, and files a night under the morning it ends, so the evening bedtime comes from the next day's `sleep.bedMinutes*`.
+- Sleep stages are drawn by `SleepTimeline` (Data/SleepTimeline.swift) in the night tile, the Home sleep widget and the sleep detail page. The stage-by-stage night comes from Apple Health (`HealthSync.sleepStages`), since Garmin only gives totals; with no stages in Health it falls back to the plain bar. `TRAINING_SLEEP_DEMO=1` draws a made-up night in the simulator.

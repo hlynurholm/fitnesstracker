@@ -10,7 +10,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to put behind a run you share.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Training reads nutrition and body measurements (weight, body fat, lean mass, BMI, waist) that MyFitnessPal and your scale save to Health, so your charts fill in without a manual export.</string>
+	<string>Training reads sleep stages, nutrition and body measurements (weight, body fat, lean mass, BMI, waist) that MyFitnessPal and your scale save to Health, so your charts fill in without a manual export.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save the picture of a run to your photos.</string>
 	<key>NSSupportsLiveActivities</key>

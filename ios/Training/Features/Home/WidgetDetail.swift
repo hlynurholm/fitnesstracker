@@ -136,7 +136,7 @@ struct WidgetDetailScreen: View {
             if !parts.isEmpty {
                 VStack(alignment: .leading, spacing: Theme.Space.m) {
                     CardTitle("The night of \(Day.short(night.date))", note: model.value("sleep.sleepScores.overall.value", on: night.date).map { "score \(Fmt.whole($0))" })
-                    SegmentBar(parts: parts.map { ($0.1, $0.2) }, height: 12)
+                    SleepTimeline(date: night.date, colors: stages.map(\.color), fallback: parts.map { ($0.1, $0.2) }, height: 96)
                     ForEach(parts, id: \.0) { p in
                         HStack(spacing: Theme.Space.s) {
                             Circle().fill(p.2).frame(width: 8, height: 8)

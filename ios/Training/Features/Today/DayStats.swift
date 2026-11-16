@@ -137,7 +137,7 @@ struct DayStats: View {
                 // How the night was shared out: one bar, and each stage named with its time under it.
                 let named = Array(zip(["Deep", "Light", "REM", "Awake"], stages)).filter { $0.1.0 > 0 }
                 if !named.isEmpty {
-                    SegmentBar(parts: named.map(\.1), height: 10)
+                    SleepTimeline(date: date, colors: stages.map(\.1), fallback: named.map(\.1))
                     HStack(alignment: .top, spacing: Theme.Space.s) {
                         ForEach(named, id: \.0) { name, stage in
                             VStack(alignment: .leading, spacing: 2) {

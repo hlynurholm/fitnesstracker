@@ -327,7 +327,7 @@ struct SleepCard: View {
             }
             // The night in stages: a bar from 1 × ½ up, with the times spelled out at 1 × 1.
             if !stages.isEmpty, size == .wide || size == .large {
-                SegmentBar(parts: stages.map { ($0.1, $0.2) })
+                SleepTimeline(date: night?.date ?? "", colors: [base, base.opacity(0.5), Theme.Palette.calm, Theme.Palette.warn], fallback: stages.map { ($0.1, $0.2) }, height: size == .large ? 76 : 40, times: size == .large)
                 if size == .large {
                     HStack(spacing: 0) {
                         ForEach(Array(stages.enumerated()), id: \.offset) { i, s in

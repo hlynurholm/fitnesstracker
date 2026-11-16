@@ -1,125 +1,324 @@
 import SwiftUI
 
 /// The watch's and the scale's numbers for the last months, shared by every day page so they are fetched once.
+/// It is the Home model, so a tile on a day can open the same detail page as the widget on Home.
 @MainActor @Observable
 final class DayStatsStore {
     static let shared = DayStatsStore()
-    private(set) var days: [String: [String: MetricDay.Value]] = [:]
+    let home = HomeModel()
     private var loadedAt: Date?
+    var days: [String: [String: MetricDay.Value]] { home.days }
 
     /// Fetches again when the last fetch is more than a few minutes old.
-    func load(force: Bool = false) async {
-        if !force, let loadedAt, Date().timeIntervalSince(loadedAt) < 300 { return }
-        if let m: MetricsResponse = try? await API.shared.get("/api/metrics?days=190", cache: true) {
-            days = Dictionary(m.days.map { ($0.date, $0.data) }, uniquingKeysWith: { _, b in b })
-            loadedAt = Date()
-        }
+    func load() async {
+        if let loadedAt, Date().timeIntervalSince(loadedAt) < 300 { return }
+        loadedAt = Date()
+        await home.load()
     }
 }
 
-/// How one day went, from the watch and the scale: the night before it, energy, movement, heart and body. Each group
-/// shows only when the day has something for it, so an old or empty day shows nothing at all.
-struct DayStatsCard: View {
+/// How one day went, from the watch and the scale. Every number is set against his own last 30 days, a headline
+/// names what stood out, and the night, the energy, the movement and the heart are drawn, not listed. Each tile
+/// opens that measure's detail page. A tile shows only when the day has something for it.
+struct DayStats: View {
     let date: String
     /// The weight logged that day, typed in or from the scale.
     var weight: Double? = nil
+    @State private var more = false
     private var store: DayStatsStore { .shared }
+    private var day: [String: MetricDay.Value] { store.days[date] ?? [:] }
 
     var body: some View {
-        let day = store.days[date] ?? [:]
-        let n = { (key: String) in day[key]?.number }
-        let whole = { (key: String) in n(key).map { Fmt.whole($0) } }
-        let groups: [(title: String, icon: String, color: Color, items: [(String, String?, String?)])] = [
-            ("Night before", "moon.zzz.fill", Theme.Palette.sleep, [
-                ("Fell asleep", clock("bed", day), nil),
-                ("Woke up", clock("wake", day) ?? wakeFromLength(day), nil),
-                ("Slept", n("sleep.sleepTimeSeconds").map { Fmt.hours($0) }, n("sleep.awakeSleepSeconds").flatMap { $0 > 0 ? "awake \(Fmt.time($0 / 60)) min" : nil }),
-                ("Sleep score", whole("sleep.sleepScores.overall.value"), day["sleep.sleepScores.overall.qualifierKey"]?.text?.lowercased()),
-            ]),
-            ("Energy", "battery.75percent", Theme.Palette.ok, [
-                // Garmin's daily summary gives the day's highest and lowest. The highest is normally the charge on waking.
-                ("Body Battery high", whole(first(day, "bodyBattery.", containing: ["wake"]) ?? "bodyBattery.maxValue"), "usually on waking"),
-                ("Body Battery low", whole(first(day, "bodyBattery.", containing: ["sleep", "bed"]) ?? "bodyBattery.minValue"), "lowest of the day"),
-                ("Stress", whole("stress.avgLevel"), n("stress.maxLevel").map { "peak \(Fmt.whole($0))" }),
-            ]),
-            ("Movement", "figure.walk", Theme.Palette.accent, [
-                ("Steps", whole("movement.steps.value"), n("movement.steps.goal").map { "goal \(Fmt.whole($0))" }),
-                ("On foot", n("movement.steps.distanceInMeters").map { String(format: "%.1f km", $0 / 1000) }, nil),
-                ("Floors", whole("movement.floorsAscended.value"), nil),
-                ("Intensity", intensity(day).map { "\(Fmt.whole($0)) min" }, nil),
-                ("Active calories", whole("calories.burnedActive").map { "\($0) kcal" }, n("calories.burnedTotal").map { "total \(Fmt.whole($0))" }),
-            ]),
-            ("Heart", "heart.fill", Theme.Palette.heart, [
-                ("Resting", whole("heartRate.restingValue").map { "\($0) bpm" }, nil),
-                ("HRV", whole("hrv.lastNightAvg").map { "\($0) ms" }, n("hrv.weeklyAvg").map { "7d avg \(Fmt.whole($0))" }),
-                ("Breathing", n("respiration.avgValue").map { String(format: "%.1f /min", $0) }, nil),
-                ("Blood oxygen", whole("pulseOx.avgValue").map { "\($0) %" }, nil),
-            ]),
-            ("Body", "scalemass", Theme.Palette.calm, [
-                ("Weight", weight.map { String(format: "%.1f kg", $0) }, nil),
-                ("Body fat", n("body.fatPercent").map { String(format: "%.1f %%", $0) }, nil),
-                ("Lean mass", n("body.leanMassKg").map { String(format: "%.1f kg", $0) }, nil),
-                ("BMI", n("body.bmi").map { String(format: "%.1f", $0) }, nil),
-                ("Waist", n("body.waistCm").map { String(format: "%.1f cm", $0) }, nil),
-            ]),
-        ]
-        let shown = groups.map { g in (g.title, g.icon, g.color, g.items.filter { $0.1 != nil }) }.filter { !$0.3.isEmpty }
-        VStack(alignment: .leading, spacing: Theme.Space.l) {
-            if !shown.isEmpty {
-                CardTitle("The day", note: date == Day.today() ? "so far" : nil)
-                ForEach(shown, id: \.0) { group in
-                    VStack(alignment: .leading, spacing: Theme.Space.s) {
-                        Label(group.0.uppercased(), systemImage: group.1).font(Theme.Typography.label).foregroundStyle(group.2)
-                        LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)], alignment: .leading, spacing: Theme.Space.m) {
-                            ForEach(group.3, id: \.0) { item in
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(item.0).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
-                                    Text(item.1 ?? "").font(Theme.Typography.numeral).lineLimit(1).minimumScaleFactor(0.6)
-                                    if let detail = item.2 { Text(detail).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted).lineLimit(1) }
-                                }
-                                .accessibilityElement(children: .combine)
-                            }
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            if !day.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(date == Day.today() ? "THE DAY SO FAR" : "THE DAY").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+                    Text(headline).font(Theme.Typography.headline).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, Theme.Space.xs).padding(.top, Theme.Space.s)
+                night
+                movement
+                energy
+                heart
+                bodyTile
+                extras
+            }
+        }
+        .task { await store.load() }
+    }
+
+    // MARK: Numbers
+
+    private func n(_ key: String, on d: String? = nil) -> Double? { store.days[d ?? date]?[key]?.number }
+    private func intensity(on d: String? = nil) -> Double? {
+        let m = n("intensityMinutes.moderate", on: d), v = n("intensityMinutes.vigorous", on: d)
+        return m == nil && v == nil ? nil : (m ?? 0) + 2 * (v ?? 0) // Garmin counts a vigorous minute twice
+    }
+
+    /// His normal for a measure: the average over the 30 days before this one. nil with fewer than five days to go on.
+    private func usual(_ value: (String) -> Double?) -> Double? {
+        let v = (1...30).compactMap { value(Day.add(date, -$0)) }
+        return v.count >= 5 ? v.reduce(0, +) / Double(v.count) : nil
+    }
+    private func usual(_ key: String) -> Double? { usual { n(key, on: $0) } }
+
+    /// The seven days ending on this one, for a small line.
+    private func week(_ key: String) -> [Double?] { (0..<7).map { n(key, on: Day.add(date, -(6 - $0))) } }
+
+    /// How many days back one has to go to find a higher value.
+    private func highestIn(_ key: String) -> Int? {
+        guard let today = n(key) else { return nil }
+        for back in 1...60 { if let v = n(key, on: Day.add(date, -back)), v >= today { return back - 1 } }
+        return nil
+    }
+
+    // MARK: Headline
+
+    /// One sentence on what stood out against his normal.
+    private var headline: String {
+        struct Note { let text: String; let size: Double; let good: Bool }
+        var notes: [Note] = []
+        func compare(_ name: String, _ value: Double?, _ normal: Double?, higherIsGood: Bool, unit: String? = nil) {
+            guard let value, let normal, normal > 0 else { return }
+            let change = (value - normal) / normal
+            guard abs(change) >= 0.1 else { return }
+            let amount = unit.map { "\(Fmt.whole(abs(value - normal))) \($0)" } ?? "\(Fmt.whole(abs(change) * 100)) %"
+            notes.append(Note(text: "\(name) \(amount) \(change > 0 ? "above" : "below") usual", size: abs(change), good: (change > 0) == higherIsGood))
+        }
+        if let run = highestIn("movement.steps.value"), run >= 7, let steps = n("movement.steps.value") {
+            notes.append(Note(text: "most steps in \(run >= 14 ? "\(run / 7) weeks" : "\(run) days") (\(Fmt.whole(steps)))", size: 1, good: true))
+        } else {
+            compare("steps", n("movement.steps.value"), usual("movement.steps.value"), higherIsGood: true)
+        }
+        compare("sleep", n("sleep.sleepTimeSeconds").map { $0 / 60 }, usual("sleep.sleepTimeSeconds").map { $0 / 60 }, higherIsGood: true, unit: "min")
+        compare("resting heart rate", n("heartRate.restingValue"), usual("heartRate.restingValue"), higherIsGood: false, unit: "bpm")
+        compare("HRV", n("hrv.lastNightAvg"), usual("hrv.lastNightAvg"), higherIsGood: true)
+        compare("intensity minutes", intensity(), usual { intensity(on: $0) }, higherIsGood: true)
+        compare("stress", n("stress.avgLevel"), usual("stress.avgLevel"), higherIsGood: false)
+        let top = notes.sorted { $0.size > $1.size }.prefix(2)
+        guard !top.isEmpty else { return "A normal day: nothing far from your usual." }
+        let good = top.filter(\.good).count
+        let lead = good == top.count ? "Strong day" : good == 0 ? "Tough day" : "Mixed day"
+        return "\(lead): " + top.map(\.text).joined(separator: ", ") + "."
+    }
+
+    // MARK: Tiles
+
+    /// The night on a clock from 20:00 to 12:00, split into its stages.
+    @ViewBuilder
+    private var night: some View {
+        if let slept = n("sleep.sleepTimeSeconds") {
+            let offset = Double(TimeZone.current.secondsFromGMT()) / 60
+            let clock = { (name: String) in n("sleep.\(name)MinutesLocal") ?? n("sleep.\(name)MinutesGMT").map { $0 + offset } }
+            let bed = clock("bed").map(Self.evening)
+            let wake = clock("wake").map(Self.evening) ?? bed.map { $0 + (slept + (n("sleep.awakeSleepSeconds") ?? 0)) / 60 }
+            let stages: [(Double, Color)] = [(n("sleep.deepSleepSeconds") ?? 0, Theme.Palette.text), (n("sleep.lightSleepSeconds") ?? 0, Theme.Palette.text.opacity(0.5)),
+                                             (n("sleep.remSleepSeconds") ?? 0, Theme.Palette.calm), (n("sleep.awakeSleepSeconds") ?? 0, Theme.Palette.warn)]
+            tile(.sleep, fill: Theme.Palette.dusk) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("NIGHT BEFORE", systemImage: "moon.zzz.fill").font(Theme.Typography.label)
+                    Spacer()
+                    if let score = n("sleep.sleepScores.overall.value") { Text("SCORE \(Fmt.whole(score))").font(Theme.Typography.label) }
+                }
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
+                    Text(Fmt.hours(slept)).font(Theme.Typography.timer)
+                    Delta(value: slept / 60, usual: usual("sleep.sleepTimeSeconds").map { $0 / 60 }, unit: "min")
+                }
+                if let bed, let wake, wake > bed {
+                    // 20:00 at the left edge, noon at the right.
+                    GeometryReader { geo in
+                        let x = { (m: Double) in CGFloat(min(max((m - 120) / 960, 0), 1)) * geo.size.width }
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Theme.Palette.text.opacity(0.14))
+                            SegmentBar(parts: stages.filter { $0.0 > 0 }, height: 14).frame(width: max(x(wake) - x(bed), 8)).offset(x: x(bed))
                         }
+                    }
+                    .frame(height: 14)
+                    HStack {
+                        Text("asleep \(Self.clock(bed))").font(Theme.Typography.caption.weight(.semibold))
+                        Spacer()
+                        Text("up \(Self.clock(wake))").font(Theme.Typography.caption.weight(.semibold))
                     }
                 }
             }
         }
-        .modifier(CardIf(shown: !shown.isEmpty))
-        .task { await store.load() }
     }
 
-    /// A stored time of the night ("bed" or "wake") as a clock time on the phone.
-    private func clock(_ name: String, _ day: [String: MetricDay.Value]) -> String? {
-        let minutes = day["sleep.\(name)MinutesLocal"]?.number ?? day["sleep.\(name)MinutesGMT"]?.number.map { $0 + Double(TimeZone.current.secondsFromGMT()) / 60 }
-        return minutes.map(Self.time)
+    /// Steps and intensity as rings toward their goals, with distance and calories beside them.
+    @ViewBuilder
+    private var movement: some View {
+        if let steps = n("movement.steps.value") {
+            let goal = n("movement.steps.goal") ?? 0
+            let minutes = intensity()
+            tile(.steps, fill: Theme.Palette.butter) {
+                Label("MOVEMENT", systemImage: "figure.walk").font(Theme.Typography.label)
+                HStack(alignment: .center, spacing: Theme.Space.l) {
+                    ProgressRing(progress: goal > 0 ? steps / goal : 0, color: Theme.Palette.text, size: 64)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Fmt.whole(steps)).font(Theme.Typography.timer)
+                        HStack(spacing: Theme.Space.s) {
+                            Text(goal > 0 ? "steps of \(Fmt.whole(goal))" : "steps").font(Theme.Typography.caption).muted()
+                            Delta(value: steps, usual: usual("movement.steps.value"))
+                        }
+                    }
+                }
+                HStack(alignment: .top, spacing: Theme.Space.m) {
+                    if let km = n("movement.steps.distanceInMeters") { small("On foot", String(format: "%.1f km", km / 1000)) }
+                    if let minutes { small("Intensity", "\(Fmt.whole(minutes)) min", delta: Delta(value: minutes, usual: usual { intensity(on: $0) })) }
+                    if let kcal = n("calories.burnedActive") { small("Active", "\(Fmt.whole(kcal)) kcal") }
+                }
+            }
+        }
     }
 
-    /// Waking worked out from bedtime and the length of the night, when the watch gave no waking time.
-    private func wakeFromLength(_ day: [String: MetricDay.Value]) -> String? {
-        let bed = day["sleep.bedMinutesLocal"]?.number ?? day["sleep.bedMinutesGMT"]?.number.map { $0 + Double(TimeZone.current.secondsFromGMT()) / 60 }
-        guard let bed, let asleep = day["sleep.sleepTimeSeconds"]?.number else { return nil }
-        return Self.time(bed + (asleep + (day["sleep.awakeSleepSeconds"]?.number ?? 0)) / 60)
+    /// Body Battery as the stretch between the day's low and high on a 0 to 100 track, and stress.
+    @ViewBuilder
+    private var energy: some View {
+        if let high = n("bodyBattery.maxValue"), let low = n("bodyBattery.minValue") {
+            tile(.bodyBattery) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("BODY BATTERY", systemImage: "battery.75percent").font(Theme.Typography.label).foregroundStyle(Theme.Palette.ok)
+                    Spacer()
+                    Text("SPENT \(Fmt.whole(high - low))").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Theme.Palette.fill)
+                        Capsule().fill(LinearGradient(colors: [Theme.Palette.warn, Theme.Palette.ok], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(geo.size.width * (high - low) / 100, 10)).offset(x: geo.size.width * low / 100)
+                    }
+                }
+                .frame(height: 14)
+                HStack(alignment: .top) {
+                    small("Lowest", Fmt.whole(low))
+                    small("Highest", Fmt.whole(high), delta: Delta(value: high, usual: usual("bodyBattery.maxValue")), note: "usually on waking")
+                    if let stress = n("stress.avgLevel") { small("Stress", Fmt.whole(stress), delta: Delta(value: stress, usual: usual("stress.avgLevel"), lowerIsGood: true), note: n("stress.maxLevel").map { "peak \(Fmt.whole($0))" }) }
+                }
+            }
+        }
     }
 
-    private static func time(_ minutes: Double) -> String {
-        let m = ((Int(minutes.rounded()) % 1440) + 1440) % 1440
+    /// Resting heart rate and HRV, each with the week leading up to the day.
+    @ViewBuilder
+    private var heart: some View {
+        let resting = n("heartRate.restingValue"), hrv = n("hrv.lastNightAvg")
+        if resting != nil || hrv != nil {
+            HStack(alignment: .top, spacing: Theme.Space.m) {
+                if let resting {
+                    tile(.restingHR) {
+                        Label("RESTING HR", systemImage: "heart.fill").font(Theme.Typography.label).foregroundStyle(Theme.Palette.heart)
+                        HStack(alignment: .firstTextBaseline, spacing: 3) { Text(Fmt.whole(resting)).font(Theme.Typography.timer); Text("bpm").font(Theme.Typography.caption).muted() }
+                        Spark(values: week("heartRate.restingValue"), style: .line, color: Theme.Palette.heart, relative: true, height: 34)
+                        Delta(value: resting, usual: usual("heartRate.restingValue"), unit: "bpm", lowerIsGood: true)
+                    }
+                }
+                if let hrv {
+                    tile(.hrv) {
+                        Label("HRV", systemImage: "waveform.path.ecg").font(Theme.Typography.label).foregroundStyle(CardKind.hrv.tint)
+                        HStack(alignment: .firstTextBaseline, spacing: 3) { Text(Fmt.whole(hrv)).font(Theme.Typography.timer); Text("ms").font(Theme.Typography.caption).muted() }
+                        Spark(values: week("hrv.lastNightAvg"), style: .line, color: CardKind.hrv.tint, relative: true, height: 34)
+                        Delta(value: hrv, usual: usual("hrv.lastNightAvg"))
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var bodyTile: some View {
+        let items: [(String, String?)] = [("Weight", weight.map { String(format: "%.1f kg", $0) }), ("Body fat", n("body.fatPercent").map { String(format: "%.1f %%", $0) }),
+                                          ("Lean mass", n("body.leanMassKg").map { String(format: "%.1f kg", $0) }), ("BMI", n("body.bmi").map { String(format: "%.1f", $0) })]
+        let shown = items.filter { $0.1 != nil }
+        if !shown.isEmpty {
+            tile(.weight) {
+                Label("BODY", systemImage: "scalemass").font(Theme.Typography.label).foregroundStyle(Theme.Palette.calm)
+                HStack(alignment: .top) { ForEach(shown, id: \.0) { small($0.0, $0.1!) } }
+            }
+        }
+    }
+
+    /// The numbers that rarely matter, folded away.
+    @ViewBuilder
+    private var extras: some View {
+        let items: [(String, String?)] = [("Breathing", n("respiration.avgValue").map { String(format: "%.1f /min", $0) }), ("Blood oxygen", n("pulseOx.avgValue").map { "\(Fmt.whole($0)) %" }),
+                                          ("Floors", n("movement.floorsAscended.value").map { Fmt.whole($0) }), ("Total calories", n("calories.burnedTotal").map { "\(Fmt.whole($0)) kcal" }),
+                                          ("Waist", n("body.waistCm").map { String(format: "%.1f cm", $0) })]
+        let shown = items.filter { $0.1 != nil }
+        if !shown.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
+                Button { withAnimation(.snappy) { more.toggle() } } label: {
+                    Label(more ? "Less" : "More from the day", systemImage: more ? "chevron.up" : "chevron.down").font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+                }
+                .buttonStyle(.plain)
+                if more {
+                    ForEach(shown, id: \.0) { item in
+                        HStack { Text(item.0).font(Theme.Typography.callout).foregroundStyle(Theme.Palette.muted); Spacer(); Text(item.1!).font(Theme.Typography.callout.weight(.semibold).monospacedDigit()) }
+                    }
+                }
+            }
+            .padding(.horizontal, Theme.Space.xs)
+        }
+    }
+
+    // MARK: Pieces
+
+    /// A tile that opens the detail page of its measure: glass, or a grainy card of colour when given a fill.
+    private func tile(_ kind: CardKind, fill: [Color]? = nil, @ViewBuilder content: () -> some View) -> some View {
+        NavigationLink { WidgetDetailScreen(model: store.home, kind: kind) } label: {
+            VStack(alignment: .leading, spacing: Theme.Space.s) { content() }
+                .foregroundStyle(Theme.Palette.text)
+                .padding(Theme.Space.l)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .cardSurface(fill: fill, lightFill: fill.map { Theme.Palette.isLight($0[0]) } ?? false)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func small(_ label: String, _ value: String, delta: Delta? = nil, note: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(Theme.Typography.caption).muted()
+            Text(value).font(Theme.Typography.numeral).lineLimit(1).minimumScaleFactor(0.6)
+            if let delta { delta }
+            if let note { Text(note).font(Theme.Typography.caption).muted().lineLimit(1).minimumScaleFactor(0.8) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Minutes after midnight as minutes after 18:00, so a night stays in one piece.
+    private static func evening(_ minutes: Double) -> Double {
+        let m = (minutes - 18 * 60).truncatingRemainder(dividingBy: 1440)
+        return m < 0 ? m + 1440 : m
+    }
+    private static func clock(_ evening: Double) -> String {
+        let m = (Int(evening.rounded()) + 18 * 60) % 1440
         return String(format: "%02d:%02d", m / 60, m % 60)
-    }
-
-    /// Garmin counts a vigorous minute twice.
-    private func intensity(_ day: [String: MetricDay.Value]) -> Double? {
-        let m = day["intensityMinutes.moderate"]?.number, v = day["intensityMinutes.vigorous"]?.number
-        return m == nil && v == nil ? nil : (m ?? 0) + 2 * (v ?? 0)
-    }
-
-    /// The first numeric key under a prefix whose name mentions one of the words, for fields Garmin may or may not send.
-    private func first(_ day: [String: MetricDay.Value], _ prefix: String, containing words: [String]) -> String? {
-        day.keys.sorted().first { key in key.hasPrefix(prefix) && day[key]?.number != nil && words.contains { key.lowercased().contains($0) } }
     }
 }
 
-/// Card styling only when there is something inside, so an empty day leaves no empty box.
-private struct CardIf: ViewModifier {
-    let shown: Bool
-    func body(content: Content) -> some View { if shown { content.card() } else { content } }
+/// How a number sits against his usual: an arrow and the gap, green when that is the good direction. On a card of
+/// colour it is drawn in the text colour, since green or amber would not read there.
+struct Delta: View {
+    let value: Double
+    let usual: Double?
+    /// Shows the gap in this unit ("12 min"). Without one it is a percentage.
+    var unit: String? = nil
+    var lowerIsGood = false
+    @Environment(\.onColor) private var onColor
+
+    var body: some View {
+        if let usual, usual > 0 {
+            let gap = value - usual, share = gap / usual
+            if abs(share) < 0.03 {
+                Text("as usual").font(Theme.Typography.caption).muted()
+            } else {
+                let good = (gap > 0) != lowerIsGood
+                Label(unit.map { "\(Fmt.whole(abs(gap))) \($0)" } ?? "\(Fmt.whole(abs(share) * 100)) %", systemImage: gap > 0 ? "arrow.up" : "arrow.down")
+                    .labelStyle(.titleAndIcon).font(Theme.Typography.caption.weight(.semibold))
+                    .foregroundStyle(onColor ? Theme.Palette.text : good ? Theme.Palette.ok : Theme.Palette.warn)
+                    .lineLimit(1).fixedSize()
+                    .accessibilityLabel("\(Fmt.whole(abs(share) * 100)) percent \(gap > 0 ? "above" : "below") usual")
+            }
+        }
+    }
 }

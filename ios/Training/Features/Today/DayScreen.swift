@@ -76,7 +76,7 @@ private struct DayContent: View {
                     }
                     session(day)
                     others
-                    DayStatsCard(date: model.date, weight: model.data?.body?.weight_kg)
+                    DayStats(date: model.date, weight: model.data?.body?.weight_kg)
                     if day.testWeek { TestsCard(model: model) }
                     if model.template.kind != "lift" { ChecklistCard(model: model, block: "knee", title: model.program.kneeRoutine.title, note: (model.program.kneeRoutine.note ?? "") + (model.template.kind == "run" ? " Optional after the run." : ""), items: model.program.kneeRoutine.items.map { .init(id: $0.id, text: $0.text) }) }
                     if ran { planned(day) }

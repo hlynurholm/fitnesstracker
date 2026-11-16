@@ -52,5 +52,7 @@ test("a day's timeline: heart rate in 5 minute steps, battery levels and events"
   assert.deepEqual(out.battery, [[t0, 52], [t0 + 60000, 50]]);
   assert.deepEqual(out.events, [{ type: "sleep", start: Date.UTC(2026, 10, 15, 0, 28), end: Date.UTC(2026, 10, 15, 1, 28), impact: 20 }]);
   assert.equal(out.drained, 55);
-  assert.deepEqual(shapeTimeline(null, null), { hr: [], battery: [], events: [] });
+  assert.deepEqual(shapeTimeline(null, null), { v: 2, hr: [], battery: [], events: [] });
+  // Without descriptors, rows of [time, level] (what Garmin sends with chunks) still read.
+  assert.deepEqual(shapeTimeline(null, [{ bodyBatteryValuesArray: [[t0, 44]] }]).battery, [[t0, 44]]);
 });

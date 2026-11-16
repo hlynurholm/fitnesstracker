@@ -3,7 +3,7 @@ import { PROGRAM, resolveDay, templateFor, buildPlan, mondayOf, addDays, daysBet
 import { getSettings, setSettings, getOverrides, ensureWorkout, rowWithJson, parseJsonField, WORKOUT_FIELDS, num, gzip, gunzip, blobToBytes, toArrayBuffer, b64encode } from "./db.js";
 import { parseUpload } from "./parsers/index.js";
 import { buildSummaryMarkdown } from "./summary.js";
-import { syncGarmin, garminConfigured } from "./garmin.js";
+import { garminTimeline, syncGarmin, garminConfigured } from "./garmin.js";
 import { projectDay } from "./projection.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -324,6 +324,14 @@ async function route(method, p, request, env, url, settings) {
   }
 
   // Daily health metrics imported from the watch, oldest first. Each day is a flat object of metric name to value.
+  if (a === "timeline" && b && method === "GET") {
+    // One day hour by hour: heart rate, Body Battery and Garmin's events, plus the activities recorded that day.
+    const date = assertDate(b);
+    const timeline = await garminTimeline(env, date, todayLocal());
+    const { results } = await env.DB.prepare("SELECT id, start_time, duration_s, sport, name FROM activities WHERE COALESCE(date, substr(start_time, 1, 10)) = ? ORDER BY start_time").bind(date).all();
+    return { date, ...timeline, activities: results };
+  }
+
   if (a === "metrics" && method === "GET") {
     const days = Math.min(400, Math.max(1, Number(url.searchParams.get("days")) || 120));
     const { results } = await env.DB.prepare("SELECT date, data FROM daily_metrics WHERE date >= ? ORDER BY date").bind(addDays(todayLocal(), -days)).all();

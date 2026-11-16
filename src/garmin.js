@@ -196,6 +196,77 @@ export async function syncGarminDaily(env, { days = 3 } = {}) {
   return result;
 }
 
+// ---------- one day, hour by hour ----------
+
+// Turns Garmin's heart rate and Body Battery answers for one day into what the app draws: moments as epoch
+// milliseconds (the phone turns them into its own clock time), heart rate averaged into 5 minute steps, the Body
+// Battery level, and the stretches Garmin marked as sleep, activity, stress, recovery or a nap.
+export function shapeTimeline(heart, battery) {
+  const column = (descriptors, keyField, indexField, pattern, fallback) => {
+    const d = (descriptors || []).find((x) => pattern.test(String(x[keyField] || "")));
+    return d && Number.isInteger(d[indexField]) ? d[indexField] : fallback;
+  };
+  const out = { hr: [], battery: [], events: [] };
+  const hrT = column(heart && heart.heartRateValueDescriptors, "key", "index", /time/i, 0);
+  const hrV = column(heart && heart.heartRateValueDescriptors, "key", "index", /heart/i, 1);
+  const buckets = new Map();
+  for (const row of (heart && heart.heartRateValues) || []) {
+    const t = Number(row && row[hrT]), v = Number(row && row[hrV]);
+    if (!isFinite(t) || !isFinite(v) || v <= 0) continue;
+    const k = Math.floor(t / 300000) * 300000;
+    const b = buckets.get(k) || [0, 0];
+    b[0] += v; b[1]++;
+    buckets.set(k, b);
+  }
+  out.hr = [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([t, [sum, n]]) => [t, Math.round(sum / n)]);
+  const report = Array.isArray(battery) ? battery[0] : battery;
+  if (report) {
+    const d = report.bodyBatteryValueDescriptorDTOList;
+    const bbT = column(d, "bodyBatteryValueDescriptorKey", "bodyBatteryValueDescriptorIndex", /time/i, 0);
+    const bbV = column(d, "bodyBatteryValueDescriptorKey", "bodyBatteryValueDescriptorIndex", /level/i, 2);
+    for (const row of report.bodyBatteryValuesArray || []) {
+      const t = Number(row && row[bbT]), v = Number(row && row[bbV]);
+      if (isFinite(t) && isFinite(v) && row[bbV] != null) out.battery.push([t, v]);
+    }
+    out.battery.sort((a, b) => a[0] - b[0]);
+    for (const e of report.bodyBatteryActivityEvent || []) {
+      const start = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(e.eventStartTimeGmt || "") ? e.eventStartTimeGmt : (e.eventStartTimeGmt || "") + "Z");
+      const length = Number(e.durationInMilliseconds);
+      if (isFinite(start) && isFinite(length) && length > 0) out.events.push({ type: String(e.eventType || "").toLowerCase(), start, end: start + length, impact: isFinite(e.bodyBatteryImpact) ? e.bodyBatteryImpact : null });
+    }
+    if (isFinite(report.charged)) out.charged = report.charged;
+    if (isFinite(report.drained)) out.drained = report.drained;
+  }
+  return out;
+}
+
+// One day's timeline from Garmin. Past days are kept once fetched; today and yesterday are fetched again when the
+// kept copy is more than 15 minutes old, since the watch keeps adding to them.
+export async function garminTimeline(env, date, today) {
+  const row = await env.DB.prepare("SELECT data, updated_at FROM day_timeline WHERE date = ?").bind(date).first();
+  const kept = row ? (() => { try { return JSON.parse(row.data); } catch { return null; } })() : null;
+  const age = row ? Date.now() - Date.parse(row.updated_at.replace(" ", "T") + "Z") : Infinity;
+  const settled = date < isoDate(new Date(Date.parse(today + "T00:00:00Z") - 86400000));
+  if (kept && (settled ? (kept.hr.length || kept.battery.length) : age < 15 * 60000)) return kept;
+  if (!garminConfigured(env)) return kept || { hr: [], battery: [], events: [], error: "GARMIN_API_KEY is not set" };
+  const base = (env.GARMIN_API_BASE || DEFAULT_BASE).replace(/\/+$/, "");
+  try {
+    const auth = { headers: { Authorization: `Bearer ${await accessToken(env, base)}`, Accept: "application/json" } };
+    const get = async (path, what) => { try { return await (await garminFetch(base, path, auth, what)).json(); } catch { return null; } };
+    const [heart, battery] = await Promise.all([
+      get(`/wellness-service/wellness/dailyHeartRate?date=${date}`, "Heart rate"),
+      get(`/wellness-service/wellness/bodyBattery/reports/daily?startDate=${date}&endDate=${date}`, "Body Battery"),
+    ]);
+    const shaped = shapeTimeline(heart, battery);
+    if (!shaped.hr.length && !shaped.battery.length && kept) return kept;
+    await env.DB.prepare("INSERT INTO day_timeline (date, data, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(date) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at")
+      .bind(date, JSON.stringify(shaped)).run();
+    return shaped;
+  } catch (e) {
+    return kept || { hr: [], battery: [], events: [], error: e.message || String(e) };
+  }
+}
+
 // ingest is the upload pipeline from api.js, passed in to avoid a circular import.
 export async function syncGarmin(env, settings, ingest, { days = DEFAULT_DAYS, dailyDays } = {}) {
   const result = { at: new Date().toISOString(), configured: garminConfigured(env), ok: false, found: 0, imported: [], already: 0, failed: [], error: null, daily: null };

@@ -121,6 +121,7 @@ All routes need the session cookie or `Authorization: Bearer <API_TOKEN>`.
 | `GET/PUT /api/settings` | Start date, phase override, targets |
 | `GET /api/garmin`, `POST /api/garmin/sync` | Automatic Garmin import: status of the last run, and run it now |
 | `GET /api/metrics?days=` | Daily health metrics from the watch, one flat object per day |
+| `GET /api/timeline/:date` | One day hour by hour from Garmin: heart rate in 5 minute steps, Body Battery levels, sleep and activity events (epoch ms), plus the activities recorded that day. Kept in `day_timeline`; today and yesterday are refetched after 15 minutes |
 
 ## Project layout
 

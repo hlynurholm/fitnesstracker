@@ -36,6 +36,10 @@ struct DayStats: View {
                     Text(headline).font(Theme.Typography.headline).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, Theme.Space.xs).padding(.top, Theme.Space.s)
+                DayClock(date: date, bedtime: {
+                    let next = Day.add(date, 1), offset = Double(TimeZone.current.secondsFromGMT()) / 60
+                    return n("sleep.bedMinutesLocal", on: next) ?? n("sleep.bedMinutesGMT", on: next).map { ($0 + offset + 1440).truncatingRemainder(dividingBy: 1440) }
+                }())
                 night
                 movement
                 energy
@@ -134,10 +138,17 @@ struct DayStats: View {
                         }
                     }
                     .frame(height: 14)
-                    HStack {
-                        Text("asleep \(Self.clock(bed))").font(Theme.Typography.caption.weight(.semibold))
-                        Spacer()
-                        Text("up \(Self.clock(wake))").font(Theme.Typography.caption.weight(.semibold))
+                    // The track runs from 20:00 to noon; the coloured stretch is the night, split into its stages.
+                    HStack { Text("20:00"); Spacer(); Text("00:00"); Spacer(); Text("04:00"); Spacer(); Text("08:00"); Spacer(); Text("12:00") }
+                        .font(Theme.Typography.caption).muted()
+                    HStack(spacing: Theme.Space.m) {
+                        ForEach(Array(zip(["Deep", "Light", "REM", "Awake"], stages)).filter { $0.1.0 > 0 }, id: \.0) { name, stage in
+                            HStack(spacing: 3) { Circle().fill(stage.1).frame(width: 7, height: 7); Text(name).font(Theme.Typography.caption) }
+                        }
+                    }
+                    HStack(alignment: .top) {
+                        small("Fell asleep", Self.clock(bed))
+                        small("Woke up", Self.clock(wake))
                     }
                 }
             }
@@ -321,4 +332,119 @@ struct Delta: View {
             }
         }
     }
+}
+
+/// GET /api/timeline/<date>: one day hour by hour. Moments are epoch milliseconds.
+struct DayTimeline: Decodable {
+    struct Event: Decodable, Hashable { let type: String; let start: Double; let end: Double; let impact: Double? }
+    struct Recorded: Decodable, Hashable { let id: Int; let start_time: String?; let duration_s: Double?; let sport: String?; let name: String? }
+    let hr: [[Double]]
+    let battery: [[Double]]
+    let events: [Event]
+    var activities: [Recorded]? = nil
+    var error: String? = nil
+}
+
+/// The day from midnight to midnight: heart rate and Body Battery as lines, with the hours asleep and the activities
+/// shaded behind them. Shows nothing for a day Garmin has no such readings for.
+struct DayClock: View {
+    let date: String
+    /// When he went to bed that evening, in minutes after midnight, from the next day's sleep.
+    var bedtime: Double? = nil
+    @State private var timeline: DayTimeline?
+
+    /// Local midnight at the start of the day, in epoch milliseconds.
+    private var midnight: Double {
+        var parts = DateComponents()
+        let p = date.split(separator: "-").compactMap { Int($0) }
+        (parts.year, parts.month, parts.day) = (p.first, p.dropFirst().first, p.last)
+        return (Calendar.current.date(from: parts) ?? Date()).timeIntervalSince1970 * 1000
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            if let t = timeline, t.hr.count > 3 || t.battery.count > 3 {
+                var spans = Self.spans(t, midnight: midnight)
+                // Garmin files a night under the morning it ends, so the evening's bedtime comes from the next day.
+                let _ = { if let bedtime, bedtime >= 720, !spans.contains(where: { $0.sleep && $0.start > midnight + 43_200_000 }) {
+                    spans.append(Span(start: midnight + bedtime * 60_000, end: midnight + 86_400_000, sleep: true)) } }()
+                CardTitle("Through the day", note: "midnight to midnight")
+                Canvas { context, size in
+                    let x = { (ms: Double) in CGFloat(min(max((ms - midnight) / 86_400_000, 0), 1)) * size.width }
+                    // Asleep and active stretches, behind the lines.
+                    for span in spans {
+                        let rect = CGRect(x: x(span.start), y: 0, width: max(x(span.end) - x(span.start), 2), height: size.height)
+                        context.fill(Path(roundedRect: rect, cornerRadius: 3), with: .color((span.sleep ? Theme.Palette.sleep : Theme.Palette.energy).opacity(0.28)))
+                    }
+                    for hour in stride(from: 6.0, through: 18, by: 6) {
+                        var line = Path()
+                        line.move(to: CGPoint(x: size.width * hour / 24, y: 0)); line.addLine(to: CGPoint(x: size.width * hour / 24, y: size.height))
+                        context.stroke(line, with: .color(Theme.Palette.separator.opacity(0.5)), lineWidth: 0.5)
+                    }
+                    // Body Battery on 0 to 100; heart rate between its own low and high.
+                    Self.draw(t.battery, low: 0, high: 100, color: Theme.Palette.ok, width: 2.5, x: x, size: size, in: &context)
+                    let beats = t.hr.compactMap { $0.count > 1 ? $0[1] : nil }
+                    if let low = beats.min(), let high = beats.max() {
+                        Self.draw(t.hr, low: low - 5, high: high + 5, color: Theme.Palette.heart, width: 1.5, x: x, size: size, in: &context)
+                    }
+                }
+                .frame(height: 150)
+                HStack { Text("00"); Spacer(); Text("06"); Spacer(); Text("12"); Spacer(); Text("18"); Spacer(); Text("24") }
+                    .font(Theme.Typography.label).foregroundStyle(Theme.Palette.muted)
+                HStack(spacing: Theme.Space.m) {
+                    key("Heart rate", Theme.Palette.heart, line: true)
+                    key("Body Battery", Theme.Palette.ok, line: true)
+                    if spans.contains(where: \.sleep) { key("Asleep", Theme.Palette.sleep, line: false) }
+                    if spans.contains(where: { !$0.sleep }) { key("Activity", Theme.Palette.energy, line: false) }
+                }
+                .lineLimit(1).minimumScaleFactor(0.7)
+                let beats = t.hr.compactMap { $0.count > 1 ? $0[1] : nil }
+                let notes = [beats.min().flatMap { lo in beats.max().map { "heart \(Fmt.whole(lo)) to \(Fmt.whole($0)) bpm" } },
+                             spans.first { $0.sleep && $0.end > midnight }.map { "up \(Self.time($0.end))" },
+                             spans.last { $0.sleep && $0.start > midnight + 12 * 3_600_000 }.map { "asleep \(Self.time($0.start))" }].compactMap { $0 }
+                if !notes.isEmpty { Text(notes.joined(separator: " · ")).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted) }
+            }
+        }
+        .modifier(CardWhen(shown: (timeline?.hr.count ?? 0) > 3 || (timeline?.battery.count ?? 0) > 3))
+        .task(id: date) { timeline = try? await API.shared.get("/api/timeline/\(date)", cache: true) }
+    }
+
+    private func key(_ name: String, _ color: Color, line: Bool) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2).fill(color.opacity(line ? 1 : 0.45)).frame(width: 12, height: line ? 3 : 10)
+            Text(name).font(Theme.Typography.caption).foregroundStyle(Theme.Palette.muted)
+        }
+    }
+
+    private struct Span { let start: Double; let end: Double; let sleep: Bool }
+
+    /// The stretches to shade: Garmin's sleep and nap events, and the activities (Garmin's, or the recorded ones).
+    private static func spans(_ t: DayTimeline, midnight: Double) -> [Span] {
+        var out = t.events.filter { ["sleep", "nap", "activity"].contains($0.type) }.map { Span(start: $0.start, end: $0.end, sleep: $0.type != "activity") }
+        if !out.contains(where: { !$0.sleep }) {
+            out += (t.activities ?? []).compactMap { a in
+                guard let start = Fmt.timestamp(a.start_time)?.timeIntervalSince1970, let length = a.duration_s else { return nil }
+                return Span(start: start * 1000, end: (start + length) * 1000, sleep: false)
+            }
+        }
+        return out.filter { $0.end > midnight && $0.start < midnight + 86_400_000 }.sorted { $0.start < $1.start }
+    }
+
+    /// A line through the points, broken where the watch has a gap of more than half an hour.
+    private static func draw(_ points: [[Double]], low: Double, high: Double, color: Color, width: CGFloat, x: (Double) -> CGFloat, size: CGSize, in context: inout GraphicsContext) {
+        var path = Path(), last: Double?
+        for p in points where p.count > 1 {
+            let point = CGPoint(x: x(p[0]), y: size.height * (1 - CGFloat((p[1] - low) / max(high - low, 1))))
+            if let last, p[0] - last < 1_800_000 { path.addLine(to: point) } else { path.move(to: point) }
+            last = p[0]
+        }
+        context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
+    }
+
+    private static func time(_ ms: Double) -> String { Date(timeIntervalSince1970: ms / 1000).formatted(date: .omitted, time: .shortened) }
+}
+
+private struct CardWhen: ViewModifier {
+    let shown: Bool
+    func body(content: Content) -> some View { if shown { content.card() } else { content } }
 }

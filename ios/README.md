@@ -145,3 +145,4 @@ SIMCTL_CHILD_TRAINING_BASE_URL=http://localhost:8787 SIMCTL_CHILD_TRAINING_TOKEN
 `SIMCTL_CHILD_TRAINING_INTERVAL_SCALE=40` shortens interval phases so a whole session runs in under a minute.
 A launch straight after `simctl install` sometimes starts without these variables; launch again if the app shows
 the connection screen.
+- The day section of Today opens with `DayClock` (in `DayStats.swift`): heart rate and Body Battery from midnight to midnight from `GET /api/timeline/<date>`, with sleep and activities shaded. Garmin gives no stress through the day in the Personal API, and files a night under the morning it ends, so the evening bedtime comes from the next day's `sleep.bedMinutes*`.

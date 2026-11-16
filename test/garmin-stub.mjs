@@ -51,6 +51,20 @@ http.createServer((req, res) => {
         sleepStartTimestampGMT: new Date(Date.parse(date + "T00:00:00Z") - 50 * 60000 + Math.round(wave(date, 2.3, 50)) * 60000).toISOString(), avgSleepStress: 17.5, avgHeartRate: 51, averageRespirationValue: 13.5, awakeCount: 2, sleepScores: { overall: { value: 78 + wave(date, 1.6, 12), qualifierKey: "GOOD" } }, dailyNapDTOS: [] };
     })));
   }
+  if (url.pathname === "/wellness-service/wellness/dailyHeartRate") {
+    const date = url.searchParams.get("date"), t0 = Date.parse(date + "T00:00:00Z");
+    // Low overnight, a run at 17:00, ordinary in between.
+    const values = Array.from({ length: 24 * 30 }, (_, i) => { const h = i / 30; return [t0 + i * 120000, Math.round(h < 7.5 ? 50 + 4 * Math.sin(h * 2) : h > 17 && h < 17.6 ? 150 + 12 * Math.sin(h * 40) : 68 + 10 * Math.sin(h * 3) + 6 * Math.sin(h * 11))]; });
+    return send(200, JSON.stringify({ calendarDate: date, restingHeartRate: 52, heartRateValueDescriptors: [{ index: 0, key: "timestamp" }, { index: 1, key: "heartrate" }], heartRateValues: values }));
+  }
+  if (url.pathname === "/wellness-service/wellness/bodyBattery/reports/daily") {
+    const date = url.searchParams.get("startDate"), t0 = Date.parse(date + "T00:00:00Z");
+    const values = Array.from({ length: 24 * 4 }, (_, i) => { const h = i / 4; return [t0 + i * 900000, "MEASURED", Math.round(h < 7.5 ? 30 + h * 8.5 : Math.max(18, 94 - (h - 7.5) * 3.6 - (h > 17 ? 12 : 0)))]; });
+    return send(200, JSON.stringify([{ date, charged: 64, drained: 70, bodyBatteryValueDescriptorDTOList: [{ bodyBatteryValueDescriptorIndex: 0, bodyBatteryValueDescriptorKey: "timestamp" }, { bodyBatteryValueDescriptorIndex: 1, bodyBatteryValueDescriptorKey: "bodyBatteryStatus" }, { bodyBatteryValueDescriptorIndex: 2, bodyBatteryValueDescriptorKey: "bodyBatteryLevel" }],
+      bodyBatteryValuesArray: values, bodyBatteryActivityEvent: [
+        { eventType: "SLEEP", eventStartTimeGmt: new Date(t0 - 40 * 60000).toISOString(), durationInMilliseconds: 8.2 * 3600000, bodyBatteryImpact: 64 },
+        { eventType: "ACTIVITY", eventStartTimeGmt: new Date(t0 + 17 * 3600000).toISOString(), durationInMilliseconds: 37 * 60000, bodyBatteryImpact: -14 }] }]));
+  }
   const hrv = url.pathname.match(/^\/hrv-service\/hrv\/daily\/(\d{4}-\d{2}-\d{2})\/(\d{4}-\d{2}-\d{2})$/);
   if (hrv) return send(200, JSON.stringify({ userProfilePk: 1, hrvSummaries: each(hrv[1], hrv[2]).map((date) => ({ calendarDate: date, weeklyAvg: 58, lastNightAvg: 58 + wave(date, 1.7, 9), lastNight5MinHigh: 84, baseline: { lowUpper: 48, balancedLow: 52, balancedUpper: 66, markerValue: 0.5 }, status: "BALANCED", feedbackPhrase: "HRV_BALANCED_1", createTimeStamp: date + "T07:00:00.0" })) }));
   if (url.pathname.startsWith("/weight-service/weight/range/")) return send(403, JSON.stringify({ message: "no weight scope in the stub" })); // one source failing must not stop the rest

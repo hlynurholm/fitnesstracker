@@ -372,26 +372,36 @@ export function buildPlan(templateKey, week) {
 // Resolve everything the UI needs to know about a date.
 export const LIFT_CYCLE = ["lift_a", "lift_b", "lift_c"];
 
-// Lifts continue where they left off: a lift that was skipped is offered on the next lift day instead of waiting for
-// its weekday to come round again. doneLifts are workouts with status done (date, template_key). Returns a map of
-// date to lift template for lift weekdays (Mon, Wed, Fri) from today on; explicit overrides are left alone and a
+// Every week holds each lift once. A lift that was skipped is not lost: it comes first the week after, followed by that
+// week's other two in the usual order, and the week after that is back to A, B, C on Mon, Wed, Fri. Within a week a
+// lift day gets the first lift not yet done that week. doneLifts are workouts with status done (date, template_key).
+// Returns a map of date to lift template for lift weekdays from today on; explicit overrides are left alone and a
 // lift placed by an override counts as taken. Off when the lift_rotation setting is "0".
 export function liftRotation(doneLifts, settings = {}, today = todayLocal(), days = 130) {
   if (String(settings.lift_rotation ?? "1") === "0") return {};
   const start = settings.program_start_date || PROGRAM.startDateDefault;
-  let pending = [...LIFT_CYCLE];
-  const take = (k) => { const i = pending.indexOf(k); if (i >= 0) pending.splice(i, 1); if (!pending.length) pending = [...LIFT_CYCLE]; };
+  const monday = (d) => addDays(d, 1 - isoWeekday(d));
+  let pending = [...LIFT_CYCLE], week = monday(start);
+  // Moving into a later week: what is left over leads, unless the whole week was missed.
+  const enter = (d) => {
+    for (const w = monday(d); week < w; week = addDays(week, 7)) {
+      pending = pending.length < LIFT_CYCLE.length ? [...pending, ...LIFT_CYCLE.filter((k) => !pending.includes(k))] : [...LIFT_CYCLE];
+    }
+  };
+  const take = (k) => { const i = pending.indexOf(k); if (i >= 0) pending.splice(i, 1); };
   const done = (doneLifts || []).filter((w) => LIFT_CYCLE.includes(w.template_key) && w.date >= start && w.date <= today).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  for (const w of done) if (w.date < today) take(w.template_key);
+  for (const w of done) if (w.date < today) { enter(w.date); take(w.template_key); }
   const doneToday = done.filter((w) => w.date === today);
   const out = {};
   for (let i = 0; i < days; i++) {
     const d = addDays(today, i);
+    enter(d);
     const override = settings.overrides ? settings.overrides[d] : null;
     if (override) { if (LIFT_CYCLE.includes(override)) take(override); continue; }
     const wd = isoWeekday(d);
     if (wd !== 1 && wd !== 3 && wd !== 5) continue;
     if (i === 0 && doneToday.length) { for (const w of doneToday) take(w.template_key); out[d] = doneToday[doneToday.length - 1].template_key; continue; }
+    if (!pending.length) pending = [...LIFT_CYCLE]; // a fourth lift day in one week starts over
     const k = pending[0];
     take(k);
     out[d] = k;

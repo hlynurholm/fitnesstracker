@@ -40,6 +40,7 @@ private struct DayContent: View {
     let isRoot: Bool
     let go: (String) -> Void
     @State private var showChange = false
+    @State private var addOnly = false
     @State private var showCalendar = false
     @State private var openRun: Int?
     @State private var syncing = false
@@ -74,8 +75,8 @@ private struct DayContent: View {
                                 .accessibilityAddTraits(.isButton).accessibilityHint("Opens the run")
                         }
                     }
+                    switcher(day)
                     session(day)
-                    others
                     DayStats(date: model.date, weight: model.data?.body?.weight_kg)
                     if day.testWeek { TestsCard(model: model) }
                     if model.template.kind != "lift" { ChecklistCard(model: model, block: "knee", title: model.program.kneeRoutine.title, note: (model.program.kneeRoutine.note ?? "") + (model.template.kind == "run" ? " Optional after the run." : ""), items: model.program.kneeRoutine.items.map { .init(id: $0.id, text: $0.text) }) }
@@ -93,7 +94,7 @@ private struct DayContent: View {
         .refreshable { await model.load() }
         .safeAreaInset(edge: .bottom) { if model.template.kind == "lift", model.mode == .log { TimerBar(model: model) } }
         .toast($model.toast)
-        .sheet(isPresented: $showChange) { SessionChangeSheet(date: model.date) { await model.load() } }
+        .sheet(isPresented: $showChange) { SessionChangeSheet(date: model.date, addOnly: addOnly) { await model.load() } }
         .sheet(isPresented: $showFinish) { FinishSheet(model: model).presentationDetents([.medium]) }
         .confirmationDialog("Delete this session and all its sets?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { Task { await model.delete() } }
@@ -227,7 +228,7 @@ private struct DayContent: View {
         // A finished day is not moved, changed or skipped. A finished run is deleted from its own page.
         if !done {
             Divided {
-                ActionRow(title: "Move or change this session", subtitle: "Swap with another day, or do a different session today", tone: .accent) { showChange = true }
+                ActionRow(title: "Move, change or add a session", subtitle: "Swap with another day, do a different session, or add a second one today", tone: .accent) { addOnly = false; showChange = true }
                 if model.workout?.status == "skipped" {
                     ActionRow(title: "Unskip") { Task { await model.setStatus("in_progress") } }
                 } else {
@@ -238,7 +239,11 @@ private struct DayContent: View {
                 }
             }
             .card()
-        } else if !ran, (model.workout?.id ?? 0) > 0, model.template.kind != "lift" || model.editing {
+        } else {
+            // A finished session can still get company: a run and a lift on the same day.
+            Divided { ActionRow(title: "Add a second session this day", tone: .accent) { addOnly = true; showChange = true } }.card()
+        }
+        if done, !ran, (model.workout?.id ?? 0) > 0, model.template.kind != "lift" || model.editing {
             // A finished lift is deleted from "Edit workout"; a finished rest day has no other page, so it stays here.
             Divided { ActionRow(title: "Delete this session and its sets", tone: .danger) { confirmDelete = true } }.card()
         }
@@ -294,19 +299,29 @@ private struct DayContent: View {
         } catch { model.toast = error.localizedDescription }
     }
 
+    /// With more than one session on the day: one pill each, the open one filled. The planned session is listed even
+    /// before anything is logged for it.
     @ViewBuilder
-    private var others: some View {
-        let list = (model.data?.workouts ?? []).filter { $0.template_key != model.templateKey }
-        if !list.isEmpty {
-            SectionTitle("Also on this day")
-            ForEach(list) { w in
-                Button { model.open(w) } label: {
-                    Row(title: model.program.templates[w.template_key]?.name ?? w.template_key,
-                        subtitle: ["\(w.sets?.count ?? 0) sets", w.distance_km.map { "\(Fmt.number($0)) km" }, w.time_sec.map { Fmt.time($0) }].compactMap { $0 }.joined(separator: " · ") + ". Tap to open.") {
-                        Badge(w.status.replacingOccurrences(of: "_", with: " "), tone: w.status == "done" ? .ok : w.status == "skipped" ? .danger : .neutral)
+    private func switcher(_ day: DayInfo) -> some View {
+        let logged = model.data?.workouts ?? []
+        let planned: [Workout?] = logged.contains { $0.template_key == day.templateKey } ? [] : [nil]
+        let list = planned + logged.map { Optional($0) }
+        if list.count > 1 {
+            HStack(spacing: Theme.Space.s) {
+                ForEach(Array(list.enumerated()), id: \.offset) { _, w in
+                    let key = w?.template_key ?? day.templateKey
+                    let on = key == model.templateKey
+                    Button { model.open(w) } label: {
+                        HStack(spacing: 4) {
+                            if w?.status == "done" { Image(systemName: "checkmark").font(.caption2.weight(.bold)) }
+                            Text(model.program.templates[key]?.name ?? key).lineLimit(1).minimumScaleFactor(0.7)
+                        }
+                        .font(Theme.Typography.label).padding(.horizontal, Theme.Space.m).frame(height: 38).frame(maxWidth: .infinity)
+                        .foregroundStyle(on ? Theme.Palette.onAccent : Theme.Palette.text)
+                        .background(on ? Theme.Palette.accent : Theme.Palette.fill, in: Capsule())
                     }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain).card()
             }
         }
     }

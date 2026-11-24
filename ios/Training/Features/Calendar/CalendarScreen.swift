@@ -128,6 +128,8 @@ struct CalendarPanel: View {
 /// Swap a day with another day, change its session, or return it to the plan. Opened from the day itself.
 struct SessionChangeSheet: View {
     let date: String
+    /// Only offer adding a second session: for a day whose session is already finished.
+    var addOnly = false
     let done: () async -> Void
     @State private var schedule: Schedule?
     @State private var error: String?
@@ -142,11 +144,21 @@ struct SessionChangeSheet: View {
                 if let error { Text(error).foregroundStyle(Theme.Palette.danger) }
                 if let day {
                     Section {
-                        Row(title: day.name, subtitle: [day.subtitle, day.deload ? "deload week" : nil, day.testWeek ? "test week" : nil, day.moved ? "moved, the plan has \(templates[day.defaultTemplateKey]?.name ?? "")" : nil, day.rotated ? "next in your lift order, the weekday plan has \(templates[day.defaultTemplateKey]?.name ?? "")" : nil].compactMap { $0 }.joined(separator: " · ")) {
+                        Row(title: day.name, subtitle: about(day, templates)) {
                             if let s = day.main?.status { Badge(s.replacingOccurrences(of: "_", with: " "), tone: s == "done" ? .ok : s == "skipped" ? .danger : .accent) }
                         }
                         if day.moved { Button("Back to the plan: \(templates[day.defaultTemplateKey]?.name ?? "")") { apply { try await API.shared.send("PUT", "/api/schedule/\(date)", ["template_key": nil]) } } }
                     }
+                    Section {
+                        // The planned session gets its own entry first, so it stays the day's main one.
+                        ForEach(addable(day, templates), id: \.key) { t in
+                            Button { apply {
+                                try await API.shared.send("PUT", "/api/day/\(date)/workout", ["template_key": day.templateKey])
+                                try await API.shared.send("PUT", "/api/day/\(date)/workout", ["template_key": t.key])
+                            } } label: { Row(title: t.name, subtitle: t.subtitle, titleColor: Theme.Palette.kind(t.kind)) { EmptyView() } }
+                        }
+                    } header: { Text("Add a second session this day") } footer: { Text("\(day.name) stays, and this one is added beside it. Switch between them at the top of the day.") }
+                    if !addOnly {
                     Section {
                         ForEach((schedule?.days ?? []).filter { $0.date != date }) { d in
                             Button { swapWith = d } label: {
@@ -162,6 +174,7 @@ struct SessionChangeSheet: View {
                                 }
                             }
                         }
+                    }
                     }
                 } else if error == nil {
                     ProgressView()
@@ -179,6 +192,19 @@ struct SessionChangeSheet: View {
                 do { schedule = try await API.shared.get("/api/schedule?from=\(monday)&to=\(Day.add(monday, 13))") } catch { self.error = error.localizedDescription }
             }
         }
+    }
+
+    private func about(_ day: ScheduleDay, _ templates: [String: Template]) -> String {
+        let planned = templates[day.defaultTemplateKey]?.name ?? ""
+        let parts: [String?] = [day.subtitle, day.deload ? "deload week" : nil, day.testWeek ? "test week" : nil,
+                                day.moved ? "moved, the plan has \(planned)" : nil, day.rotated ? "next in your lift order, the weekday plan has \(planned)" : nil]
+        return parts.compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// Sessions that could join the day: everything pickable that is not on it already.
+    private func addable(_ day: ScheduleDay, _ templates: [String: Template]) -> [Template] {
+        let taken = Set(day.workouts.map(\.template_key) + [day.templateKey])
+        return pickableTemplates.filter { !taken.contains($0) }.compactMap { templates[$0] }
     }
 
     private func apply(_ change: @escaping () async throws -> Void) {

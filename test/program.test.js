@@ -85,6 +85,15 @@ test("a skipped lift leads the next week, and the week after is A, B, C again", 
   assert.equal(mon.defaultTemplateKey, "lift_a");
 });
 
+test("a lift brought onto a run day counts for the week", () => {
+  const s = { program_start_date: "2026-11-09", overrides: { "2026-11-23": "rest_walk" } };
+  const week1 = ["lift_a", "lift_b", "lift_c"].map((k, i) => ({ date: ["2026-11-09", "2026-11-11", "2026-11-13"][i], template_key: k }));
+  const week2 = ["lift_a", "lift_b", "lift_c"].map((k, i) => ({ date: ["2026-11-16", "2026-11-18", "2026-11-20"][i], template_key: k }));
+  // Monday's Lift A was moved to Tuesday the 24th (a run day) and is on that day's list.
+  const rot = liftRotation([...week1, ...week2, { date: "2026-11-24", template_key: "lift_a" }], s, "2026-11-24");
+  assert.deepEqual([rot["2026-11-25"], rot["2026-11-27"], rot["2026-11-30"]], ["lift_b", "lift_c", "lift_a"]);
+});
+
 test("lift rotation: nothing skipped keeps the weekday plan, overrides win, and it can be switched off", () => {
   const s = { program_start_date: "2026-11-09", overrides: {} };
   const done = [{ date: "2026-11-09", template_key: "lift_a" }, { date: "2026-11-11", template_key: "lift_b" }, { date: "2026-11-13", template_key: "lift_c" }];

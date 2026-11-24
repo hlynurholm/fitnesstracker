@@ -5,7 +5,8 @@ export async function getSettings(env) {
   const [{ results }, { results: ov }, { results: lifts }] = await env.DB.batch([
     env.DB.prepare("SELECT key, value FROM settings"),
     env.DB.prepare("SELECT date, template_key FROM schedule_overrides"),
-    env.DB.prepare("SELECT date, template_key FROM workouts WHERE status = 'done' AND template_key IN ('lift_a', 'lift_b', 'lift_c') ORDER BY date, id"),
+    // Done lifts, and a lift that is on today's list but not finished yet: both are spoken for.
+    env.DB.prepare("SELECT date, template_key FROM workouts WHERE (status = 'done' OR (status = 'in_progress' AND date = ?)) AND template_key IN ('lift_a', 'lift_b', 'lift_c') ORDER BY date, id").bind(todayLocal()),
   ]);
   const s = {};
   for (const r of results || []) s[r.key] = r.value;

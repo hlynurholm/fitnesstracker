@@ -391,7 +391,10 @@ export function liftRotation(doneLifts, settings = {}, today = todayLocal(), day
   const take = (k) => { const i = pending.indexOf(k); if (i >= 0) pending.splice(i, 1); };
   const done = (doneLifts || []).filter((w) => LIFT_CYCLE.includes(w.template_key) && w.date >= start && w.date <= today).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   for (const w of done) if (w.date < today) { enter(w.date); take(w.template_key); }
+  // Today's lifts count whatever the weekday: a lift added to a run day is taken from the week like any other.
   const doneToday = done.filter((w) => w.date === today);
+  enter(today);
+  for (const w of doneToday) take(w.template_key);
   const out = {};
   for (let i = 0; i < days; i++) {
     const d = addDays(today, i);
@@ -400,7 +403,7 @@ export function liftRotation(doneLifts, settings = {}, today = todayLocal(), day
     if (override) { if (LIFT_CYCLE.includes(override)) take(override); continue; }
     const wd = isoWeekday(d);
     if (wd !== 1 && wd !== 3 && wd !== 5) continue;
-    if (i === 0 && doneToday.length) { for (const w of doneToday) take(w.template_key); out[d] = doneToday[doneToday.length - 1].template_key; continue; }
+    if (i === 0 && doneToday.length) { out[d] = doneToday[doneToday.length - 1].template_key; continue; }
     if (!pending.length) pending = [...LIFT_CYCLE]; // a fourth lift day in one week starts over
     const k = pending[0];
     take(k);

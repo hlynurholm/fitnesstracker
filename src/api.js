@@ -76,7 +76,25 @@ async function route(method, p, request, env, url, settings) {
       Object.assign(settings, await getSettings(env));
       return { a: resolveDay(da, settings), b: resolveDay(db, settings) };
     }
-    if (b && b !== "swap" && (method === "PUT" || method === "DELETE")) {
+    if (b === "move" && method === "POST") {
+      // A session carried onto another day, beside that day's own: a missed lift done together with today's run.
+      // What was logged for it goes along, and the day it came from becomes a rest day.
+      const body = await readJson(request);
+      const from = assertDate(body.from), to = assertDate(body.to);
+      if (from === to) bad("Pick two different days");
+      const key = resolveDay(from, settings).templateKey, own = resolveDay(to, settings).templateKey;
+      if (key === own) bad("That day already has this session");
+      const row = await env.DB.prepare("SELECT id, status FROM workouts WHERE date = ? AND template_key = ?").bind(from, key).first();
+      if (row && row.status === "done") bad("That session is already done");
+      await ensureWorkout(env, to, own, settings);
+      const there = await env.DB.prepare("SELECT id FROM workouts WHERE date = ? AND template_key = ?").bind(to, key).first();
+      if (row && !there) await env.DB.prepare("UPDATE workouts SET date = ?, status = 'in_progress', updated_at = datetime('now') WHERE id = ?").bind(to, row.id).run();
+      else await ensureWorkout(env, to, key, settings);
+      await setOverride(env, from, "rest_walk", settings);
+      Object.assign(settings, await getSettings(env));
+      return { from: resolveDay(from, settings), to: resolveDay(to, settings) };
+    }
+    if (b && b !== "swap" && b !== "move" && (method === "PUT" || method === "DELETE")) {
       const date = assertDate(b);
       const body = method === "DELETE" ? {} : await readJson(request);
       const key = body.template_key || null;

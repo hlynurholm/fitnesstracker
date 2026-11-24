@@ -149,6 +149,16 @@ struct SessionChangeSheet: View {
                         }
                         if day.moved { Button("Back to the plan: \(templates[day.defaultTemplateKey]?.name ?? "")") { apply { try await API.shared.send("PUT", "/api/schedule/\(date)", ["template_key": nil]) } } }
                     }
+                    let missed = movable(day)
+                    if !missed.isEmpty {
+                        Section {
+                            ForEach(missed) { d in
+                                Button { apply { try await API.shared.send("POST", "/api/schedule/move", ["from": d.date, "to": date]) } } label: {
+                                    Row(title: "\(d.name) from \(Day.label(d.date))", subtitle: d.main?.status == "skipped" ? "skipped" : d.date < (schedule?.today ?? "") ? "not done" : "planned", titleColor: Theme.Palette.kind(d.kind)) { EmptyView() }
+                                }
+                            }
+                        } header: { Text("Move a session here from another day") } footer: { Text("\(day.name) stays and the moved session joins it. The day it came from becomes a rest day.") }
+                    }
                     Section {
                         // The planned session gets its own entry first, so it stays the day's main one.
                         ForEach(addable(day, templates), id: \.key) { t in
@@ -160,7 +170,7 @@ struct SessionChangeSheet: View {
                     } header: { Text("Add a second session this day") } footer: { Text("\(day.name) stays, and this one is added beside it. Switch between them at the top of the day.") }
                     if !addOnly {
                     Section {
-                        ForEach((schedule?.days ?? []).filter { $0.date != date }) { d in
+                        ForEach((schedule?.days ?? []).filter { $0.date != date && $0.date >= Day.monday(of: date) }) { d in
                             Button { swapWith = d } label: {
                                 Row(Day.label(d.date) + (d.date == schedule?.today ? " (today)" : ""), subtitle: [d.name, d.main?.status.replacingOccurrences(of: "_", with: " "), d.moved ? "moved" : nil].compactMap { $0 }.joined(separator: " · "))
                             }
@@ -189,7 +199,7 @@ struct SessionChangeSheet: View {
             }
             .task {
                 let monday = Day.monday(of: date)
-                do { schedule = try await API.shared.get("/api/schedule?from=\(monday)&to=\(Day.add(monday, 13))") } catch { self.error = error.localizedDescription }
+                do { schedule = try await API.shared.get("/api/schedule?from=\(Day.add(monday, -7))&to=\(Day.add(monday, 13))") } catch { self.error = error.localizedDescription }
             }
         }
     }
@@ -199,6 +209,14 @@ struct SessionChangeSheet: View {
         let parts: [String?] = [day.subtitle, day.deload ? "deload week" : nil, day.testWeek ? "test week" : nil,
                                 day.moved ? "moved, the plan has \(planned)" : nil, day.rotated ? "next in your lift order, the weekday plan has \(planned)" : nil]
         return parts.compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// Sessions on other days that could be brought here: not rest, not finished, not already on this day.
+    /// Missed ones first, latest at the top, then what is still to come.
+    private func movable(_ day: ScheduleDay) -> [ScheduleDay] {
+        let taken = Set(day.workouts.map(\.template_key) + [day.templateKey])
+        let all = (schedule?.days ?? []).filter { $0.date != date && $0.kind != "rest" && $0.main?.status != "done" && !taken.contains($0.templateKey) }
+        return all.filter { $0.date < date && $0.date >= Day.add(date, -7) }.reversed() + all.filter { $0.date > date }
     }
 
     /// Sessions that could join the day: everything pickable that is not on it already.

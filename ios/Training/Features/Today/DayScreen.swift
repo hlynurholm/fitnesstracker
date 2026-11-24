@@ -40,7 +40,6 @@ private struct DayContent: View {
     let isRoot: Bool
     let go: (String) -> Void
     @State private var showChange = false
-    @State private var addOnly = false
     @State private var showCalendar = false
     @State private var openRun: Int?
     @State private var syncing = false
@@ -94,7 +93,7 @@ private struct DayContent: View {
         .refreshable { await model.load() }
         .safeAreaInset(edge: .bottom) { if model.template.kind == "lift", model.mode == .log { TimerBar(model: model) } }
         .toast($model.toast)
-        .sheet(isPresented: $showChange) { SessionChangeSheet(date: model.date, addOnly: addOnly) { await model.load() } }
+        .sheet(isPresented: $showChange) { SessionChangeSheet(date: model.date) { await model.load() } }
         .sheet(isPresented: $showFinish) { FinishSheet(model: model).presentationDetents([.medium]) }
         .confirmationDialog("Delete this session and all its sets?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { Task { await model.delete() } }
@@ -228,7 +227,7 @@ private struct DayContent: View {
         // A finished day is not moved, changed or skipped. A finished run is deleted from its own page.
         if !done {
             Divided {
-                ActionRow(title: "Move, change or add a session", subtitle: "Swap with another day, do a different session, or add a second one today", tone: .accent) { addOnly = false; showChange = true }
+                ActionRow(title: "Move or change this session", subtitle: "Swap with another day, do it together with another day's session, or do a different one", tone: .accent) { showChange = true }
                 if model.workout?.status == "skipped" {
                     ActionRow(title: "Unskip") { Task { await model.setStatus("in_progress") } }
                 } else {
@@ -239,11 +238,7 @@ private struct DayContent: View {
                 }
             }
             .card()
-        } else {
-            // A finished session can still get company: a run and a lift on the same day.
-            Divided { ActionRow(title: "Add a second session this day", tone: .accent) { addOnly = true; showChange = true } }.card()
-        }
-        if done, !ran, (model.workout?.id ?? 0) > 0, model.template.kind != "lift" || model.editing {
+        } else if !ran, (model.workout?.id ?? 0) > 0, model.template.kind != "lift" || model.editing {
             // A finished lift is deleted from "Edit workout"; a finished rest day has no other page, so it stays here.
             Divided { ActionRow(title: "Delete this session and its sets", tone: .danger) { confirmDelete = true } }.card()
         }

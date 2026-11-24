@@ -128,8 +128,6 @@ struct CalendarPanel: View {
 /// Swap a day with another day, change its session, or return it to the plan. Opened from the day itself.
 struct SessionChangeSheet: View {
     let date: String
-    /// Only offer adding a second session: for a day whose session is already finished.
-    var addOnly = false
     let done: () async -> Void
     @State private var schedule: Schedule?
     @State private var error: String?
@@ -149,28 +147,8 @@ struct SessionChangeSheet: View {
                         }
                         if day.moved { Button("Back to the plan: \(templates[day.defaultTemplateKey]?.name ?? "")") { apply { try await API.shared.send("PUT", "/api/schedule/\(date)", ["template_key": nil]) } } }
                     }
-                    let missed = movable(day)
-                    if !missed.isEmpty {
-                        Section {
-                            ForEach(missed) { d in
-                                Button { apply { try await API.shared.send("POST", "/api/schedule/move", ["from": d.date, "to": date]) } } label: {
-                                    Row(title: "\(d.name) from \(Day.label(d.date))", subtitle: d.main?.status == "skipped" ? "skipped" : d.date < (schedule?.today ?? "") ? "not done" : "planned", titleColor: Theme.Palette.kind(d.kind)) { EmptyView() }
-                                }
-                            }
-                        } header: { Text("Move a session here from another day") } footer: { Text("\(day.name) stays and the moved session joins it. The day it came from becomes a rest day.") }
-                    }
                     Section {
-                        // The planned session gets its own entry first, so it stays the day's main one.
-                        ForEach(addable(day, templates), id: \.key) { t in
-                            Button { apply {
-                                try await API.shared.send("PUT", "/api/day/\(date)/workout", ["template_key": day.templateKey])
-                                try await API.shared.send("PUT", "/api/day/\(date)/workout", ["template_key": t.key])
-                            } } label: { Row(title: t.name, subtitle: t.subtitle, titleColor: Theme.Palette.kind(t.kind)) { EmptyView() } }
-                        }
-                    } header: { Text("Add a second session this day") } footer: { Text("\(day.name) stays, and this one is added beside it. Switch between them at the top of the day.") }
-                    if !addOnly {
-                    Section {
-                        ForEach((schedule?.days ?? []).filter { $0.date != date && $0.date >= Day.monday(of: date) }) { d in
+                        ForEach((schedule?.days ?? []).filter { $0.date != date && $0.date >= min(Day.monday(of: date), Day.add(date, -3)) }) { d in
                             Button { swapWith = d } label: {
                                 Row(Day.label(d.date) + (d.date == schedule?.today ? " (today)" : ""), subtitle: [d.name, d.main?.status.replacingOccurrences(of: "_", with: " "), d.moved ? "moved" : nil].compactMap { $0 }.joined(separator: " · "))
                             }
@@ -185,21 +163,27 @@ struct SessionChangeSheet: View {
                             }
                         }
                     }
-                    }
                 } else if error == nil {
                     ProgressView()
                 }
             }
             .inlineTitle(Day.label(date, year: true))
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
-            .confirmationDialog("Swap these two days?", isPresented: Binding(get: { swapWith != nil }, set: { if !$0 { swapWith = nil } }), titleVisibility: .visible, presenting: swapWith) { other in
-                Button("Swap") { apply { try await API.shared.send("POST", "/api/schedule/swap", ["a": date, "b": other.date]) } }
+            .confirmationDialog("Swap, or do both on one day?", isPresented: Binding(get: { swapWith != nil }, set: { if !$0 { swapWith = nil } }), titleVisibility: .visible, presenting: swapWith) { other in
+                Button("Swap the two days") { apply { try await API.shared.send("POST", "/api/schedule/swap", ["a": date, "b": other.date]) } }
+                // Both on one day: the moved session joins that day's own, and the day it left becomes a rest day.
+                if let day, canMove(other, onto: day) {
+                    Button("Do \(other.name) on \(Day.label(date)) as well") { apply { try await API.shared.send("POST", "/api/schedule/move", ["from": other.date, "to": date]) } }
+                }
+                if let day, canMove(day, onto: other) {
+                    Button("Do \(day.name) on \(Day.label(other.date)) as well") { apply { try await API.shared.send("POST", "/api/schedule/move", ["from": date, "to": other.date]) } }
+                }
             } message: { other in
-                Text("\(Day.label(date)) becomes \(other.name). \(Day.label(other.date)) becomes \(day?.name ?? ""). Anything already logged stays on its day.")
+                Text("Swap trades the two sessions. As well keeps that day's own session and adds the other one to it.")
             }
             .task {
                 let monday = Day.monday(of: date)
-                do { schedule = try await API.shared.get("/api/schedule?from=\(Day.add(monday, -7))&to=\(Day.add(monday, 13))") } catch { self.error = error.localizedDescription }
+                do { schedule = try await API.shared.get("/api/schedule?from=\(Day.add(monday, -3))&to=\(Day.add(monday, 13))") } catch { self.error = error.localizedDescription }
             }
         }
     }
@@ -211,18 +195,10 @@ struct SessionChangeSheet: View {
         return parts.compactMap { $0 }.joined(separator: " · ")
     }
 
-    /// Sessions on other days that could be brought here: not rest, not finished, not already on this day.
-    /// Missed ones first, latest at the top, then what is still to come.
-    private func movable(_ day: ScheduleDay) -> [ScheduleDay] {
-        let taken = Set(day.workouts.map(\.template_key) + [day.templateKey])
-        let all = (schedule?.days ?? []).filter { $0.date != date && $0.kind != "rest" && $0.main?.status != "done" && !taken.contains($0.templateKey) }
-        return all.filter { $0.date < date && $0.date >= Day.add(date, -7) }.reversed() + all.filter { $0.date > date }
-    }
-
-    /// Sessions that could join the day: everything pickable that is not on it already.
-    private func addable(_ day: ScheduleDay, _ templates: [String: Template]) -> [Template] {
-        let taken = Set(day.workouts.map(\.template_key) + [day.templateKey])
-        return pickableTemplates.filter { !taken.contains($0) }.compactMap { templates[$0] }
+    /// A session can join another day when it is a real session, not finished, not that day's own already, and the
+    /// day it would join has not passed.
+    private func canMove(_ from: ScheduleDay, onto to: ScheduleDay) -> Bool {
+        from.kind != "rest" && from.main?.status != "done" && from.templateKey != to.templateKey && to.date >= (schedule?.today ?? "")
     }
 
     private func apply(_ change: @escaping () async throws -> Void) {

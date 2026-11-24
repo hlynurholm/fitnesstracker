@@ -44,10 +44,10 @@ struct WorkoutLiveActivity: Widget {
             } compactLeading: {
                 Image(systemName: context.attributes.icon).foregroundStyle(tint)
             } compactTrailing: {
-                PhaseTimer(state: context.state, startedAt: context.attributes.startedAt)
-                    .monospacedDigit().foregroundStyle(tint).frame(maxWidth: 48)
+                IslandTimer(state: context.state, startedAt: context.attributes.startedAt, size: 14).foregroundStyle(tint)
             } minimal: {
-                Image(systemName: context.attributes.icon).foregroundStyle(tint)
+                // The timer here too: with a podcast playing the system may give this activity only the small circle.
+                IslandTimer(state: context.state, startedAt: context.attributes.startedAt, size: 11).foregroundStyle(tint)
             }
         }
     }
@@ -154,6 +154,23 @@ private struct PhaseTimer: View {
         } else {
             Text(startedAt, style: .timer)
         }
+    }
+}
+
+/// The timer for the island's small spots. A timer text asks for far more room than its digits need and is cut to
+/// "0:…" when the island is narrow (a second activity next to it), so a hidden "0:00" claims the room and the timer
+/// is drawn over it.
+private struct IslandTimer: View {
+    let state: WorkoutActivityAttributes.ContentState
+    let startedAt: Date
+    let size: CGFloat
+    var body: some View {
+        let showing = state.countdown.map { $0.upperBound.timeIntervalSinceNow } ?? Date().timeIntervalSince(state.restSince ?? startedAt)
+        Text(showing >= 3540 ? "0:00:00" : showing >= 540 ? "00:00" : "0:00").hidden()
+            .overlay(alignment: .trailing) {
+                PhaseTimer(state: state, startedAt: startedAt).lineLimit(1).minimumScaleFactor(0.6).multilineTextAlignment(.trailing)
+            }
+            .font(.system(size: size, weight: .semibold).monospacedDigit())
     }
 }
 

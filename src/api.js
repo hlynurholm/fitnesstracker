@@ -421,6 +421,8 @@ async function getDay(env, date, settings) {
   const notes = await blockNotesFor(env, ids);
   const workouts = wrows.map((w) => ({ ...rowWithJson(w, ["plan_json", "checklist_json"]), sets: sets.filter((s) => s.workout_id === w.id), activities: activities.filter((x) => x.workout_id === w.id), block_notes: notes[w.id] || {} }));
   const active = workouts.find((w) => w.template_key === day.templateKey) || workouts.find((w) => w.status !== "skipped") || null;
+  // A lift brought onto a run day still needs its jumps: the day's own session has none to offer.
+  if (!day.jumps && workouts.some((w) => (templateFor(w.template_key).blocks || []).includes("jumps"))) day.jumps = PROGRAM.jumps.byPhase[day.phase];
   const keys = new Set(day.plan.map((e) => e.key));
   for (const w of workouts) for (const e of w.plan || []) keys.add(e.key);
   const last = await lastSetsFor(env, [...keys], date);
